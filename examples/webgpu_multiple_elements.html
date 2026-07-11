@@ -1,876 +1,891 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<title>three.js - unrolling conics</title>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<meta property="og:title" content="three.js unrolling conics">
-		<meta property="og:type" content="website">
-		<meta property="og:url" content="https://threejs.org/examples/webgpu_multiple_elements.html">
-		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgpu_multiple_elements.jpg">
-		<link type="text/css" rel="stylesheet" href="main.css">
-		<style>
+        <head>
+                <title>three.js - unrolling conics</title>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+                <meta property="og:title" content="three.js unrolling conics">
+                <meta property="og:type" content="website">
+                <meta property="og:url" content="https://threejs.org/examples/webgpu_multiple_elements.html">
+                <meta property="og:image" content="https://threejs.org/examples/screenshots/webgpu_multiple_elements.jpg">
+                <link type="text/css" rel="stylesheet" href="main.css">
+                <style>
 
-			* {
-				box-sizing: border-box;
-				-moz-box-sizing: border-box;
-			}
+                        * {
+                                box-sizing: border-box;
+                                -moz-box-sizing: border-box;
+                        }
 
-			body {
-				background-color: #fff;
-				color: #444;
-			}
+                        body {
+                                background-color: #fff;
+                                color: #444;
+                        }
 
-			a {
-				color: #08f;
-			}
+                        a {
+                                color: #08f;
+                        }
 
-			#content {
-				position: absolute;
-				top: 0; width: 100%;
-				z-index: 1;
-				padding: 3em 0 0 0;
-			}
+                        #content {
+                                position: absolute;
+                                top: 0; width: 100%;
+                                z-index: 1;
+                                padding: 3em 0 0 0;
+                        }
 
-			#c {
-				position: absolute;
-				left: 0;
-				width: 100%;
-				height: 100%;
-			}
+                        #c {
+                                position: absolute;
+                                left: 0;
+                                width: 100%;
+                                height: 100%;
+                        }
 
-			.list-item {
-				display: inline-block;
-				margin: 1em;
-				padding: 1em;
-				box-shadow: 1px 2px 4px 0px rgba(0,0,0,0.25);
-			}
+                        .list-item {
+                                display: inline-block;
+                                margin: 1em;
+                                padding: 1em;
+                                box-shadow: 1px 2px 4px 0px rgba(0,0,0,0.25);
+                        }
 
-			.list-item > div:nth-child(1) {
-				width: 600px;
-				height: 400px;
-			}
+                        .list-item > div:nth-child(1) {
+                                width: 600px;
+                                height: 400px;
+                        }
 
-			.list-item > div:nth-child(2) {
-				color: #888;
-				font-family: sans-serif;
-				font-size: large;
-				width: 600px;
-				margin-top: 0.5em;
-			}
+                        .list-item > div:nth-child(2) {
+                                color: #888;
+                                font-family: sans-serif;
+                                font-size: large;
+                                width: 600px;
+                                margin-top: 0.5em;
+                        }
 .stats {
-					color: #666;
-					font-family: sans-serif;
-					font-size: 0.95em;
-					white-space: pre-wrap;
-					width: 600px;
-					margin-top: 0.4em;
-				}
-		</style>
-	</head>
-	<body>
+                                        color: #666;
+                                        font-family: sans-serif;
+                                        font-size: 0.95em;
+                                        white-space: pre-wrap;
+                                        width: 600px;
+                                        margin-top: 0.4em;
+                                }
+                </style>
+        </head>
+        <body>
 
-		<canvas id="c"></canvas>
+                <canvas id="c"></canvas>
 
-		<div id="content">
-			<div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics</div>
-		</div>
+                <div id="content">
+                        <div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics</div>
+                </div>
 
-		<script type="importmap">
-			{
-				"imports": {
-					"three": "../build/three.webgpu.js",
-					"three/webgpu": "../build/three.webgpu.js",
-					"three/tsl": "../build/three.tsl.js",
-					"three/addons/": "./jsm/"
-				}
-			}
-		</script>
+                <script type="importmap">
+                        {
+                                "imports": {
+                                        "three": "./build/three.webgpu.js",
+                                        "three/webgpu": "./build/three.webgpu.js",
+                                        "three/tsl": "./build/three.tsl.js",
+                                        "three/addons/": "./jsm/"
+                                }
+                        }
+                </script>
 
-		<script type="module">
+                <script type="module">
 
 import * as THREE from 'three/webgpu';
-				import { color } from 'three/tsl';
-				import { Inspector } from 'three/addons/inspector/Inspector.js';
-				import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+                                import { color } from 'three/tsl';
+                                import { Inspector } from 'three/addons/inspector/Inspector.js';
+                                import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-			let canvas, renderer;
+                        let canvas, renderer;
 
-			const scenes = [];
+                        const scenes = [];
 
-			init();
+                        init();
 
-			function init() {
+                        function init() {
 
-				canvas = document.getElementById( 'c' );
+                                canvas = document.getElementById( 'c' );
 
-				let coneAngle = 0.4;
-				let coneHeight = 5;
-				const coneSegments = 64;
-				let coneRadius = Math.tan( coneAngle ) * coneHeight;
+                                let coneAngle = 0.4;
+                                let coneHeight = 5;
+                                const coneSegments = 64;
+                                let coneRadius = Math.tan( coneAngle ) * coneHeight;
 
-				let coneGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                let coneGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
 
-				let cutAngle = 0.0;
-				const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), 0.0 );
-				const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), 1.0 );
-				const titles = [ '3D Cone Sliced', 'Unrolled Pattern' ];
-				const objectMaterials = [];
-				const groundMaterials = [];
-				const knotClippingGroups = [];
+                                let cutAngle = 0.0;
+                                const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), 0.0 );
+                                const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), 1.0 );
+                                const titles = [ '3D Cone Sliced', 'Unrolled Pattern' ];
+                                const objectMaterials = [];
+                                const groundMaterials = [];
+                                const knotClippingGroups = [];
 
-				const content = document.getElementById( 'content' );
+                                const content = document.getElementById( 'content' );
 
-				for ( let i = 0; i < 2; i ++ ) {
+                                for ( let i = 0; i < 2; i ++ ) {
 
-					const scene = new THREE.Scene();
-					scene.backgroundNode = color( 0xeeeeee );
+                                        const scene = new THREE.Scene();
+                                        scene.backgroundNode = color( 0xeeeeee );
 
-					// make a list item
-					const element = document.createElement( 'div' );
-					element.className = 'list-item';
+                                        // make a list item
+                                        const element = document.createElement( 'div' );
+                                        element.className = 'list-item';
 
-					const sceneElement = document.createElement( 'div' );
-					element.appendChild( sceneElement );
+                                        const sceneElement = document.createElement( 'div' );
+                                        element.appendChild( sceneElement );
 
-					const descriptionElement = document.createElement( 'div' );
-					descriptionElement.innerText = titles[ i ];
-					element.appendChild( descriptionElement );
+                                        const descriptionElement = document.createElement( 'div' );
+                                        descriptionElement.innerText = titles[ i ];
+                                        element.appendChild( descriptionElement );
 
-					// the element that represents the area we want to render the scene
-					scene.userData.element = sceneElement;
-					content.appendChild( element );
+                                        // the element that represents the area we want to render the scene
+                                        scene.userData.element = sceneElement;
+                                        content.appendChild( element );
 
-				const statsElement = document.createElement( 'div' );
-				statsElement.className = 'stats';
-				element.appendChild( statsElement );
+                                const statsElement = document.createElement( 'div' );
+                                statsElement.className = 'stats';
+                                element.appendChild( statsElement );
 
-					const camera = new THREE.PerspectiveCamera( 50, 1, 0.1, 50 );
-					camera.position.z = 5;
-					scene.userData.camera = camera;
+                                        const camera = new THREE.PerspectiveCamera( 50, 1, 0.1, 50 );
+                                        camera.position.z = 5;
+                                        scene.userData.camera = camera;
 
-					const controls = new OrbitControls( scene.userData.camera, scene.userData.element );
-					controls.minDistance = 1;
-					controls.maxDistance = 55;
-					controls.enablePan = true;
-					controls.enableZoom = true;
-					scene.userData.controls = controls;
+                                        const controls = new OrbitControls( scene.userData.camera, scene.userData.element );
+                                        controls.minDistance = 1;
+                                        controls.maxDistance = 55;
+                                        controls.enablePan = true;
+                                        controls.enableZoom = true;
+                                        scene.userData.controls = controls;
 
-					const material = new THREE.MeshPhongNodeMaterial( {
+                                        const material = new THREE.MeshPhongNodeMaterial( {
 
-						color: new THREE.Color().setHSL( Math.random(), 1, 0.75, THREE.SRGBColorSpace ),
-						shininess: 0,
-						side: THREE.DoubleSide,
-						alphaToCoverage: true
+                                                color: new THREE.Color().setHSL( Math.random(), 1, 0.75, THREE.SRGBColorSpace ),
+                                                shininess: 0,
+                                                side: THREE.DoubleSide,
+                                                alphaToCoverage: true
 
-					} );
+                                        } );
 
-					objectMaterials.push( material );
+                                        objectMaterials.push( material );
 
-					let object;
+                                        let object;
 
-					if ( i === 0 ) {
+                                        if ( i === 0 ) {
 
-						const knotClippingGroup = new THREE.ClippingGroup();
-						knotClippingGroup.clippingPlanes = [ localPlane1, localPlane2 ];
-						knotClippingGroup.clipIntersection = false;
-						knotClippingGroup.clipShadows = true;
+                                                const knotClippingGroup = new THREE.ClippingGroup();
+                                                knotClippingGroup.clippingPlanes = [ localPlane1, localPlane2 ];
+                                                knotClippingGroup.clipIntersection = false;
+                                                knotClippingGroup.clipShadows = true;
 
-						scene.add( knotClippingGroup );
+                                                scene.add( knotClippingGroup );
 
-						object = new THREE.Mesh( coneGeometry, material );
-						object.castShadow = true;
+                                                object = new THREE.Mesh( coneGeometry, material );
+                                                object.castShadow = true;
 
-						object.rotation.z = Math.PI;
-						knotClippingGroup.add( object );
-						scene.userData.coneMesh = object;
-						knotClippingGroups.push( knotClippingGroup );
+                                                object.rotation.z = Math.PI;
+                                                knotClippingGroup.add( object );
+                                                scene.userData.coneMesh = object;
+                                                knotClippingGroups.push( knotClippingGroup );
 
-						scene.userData.statsElement = statsElement;
-						camera.position.set( 0, 6, 9 );
-						
-						camera.lookAt( 0, 0, 0 );
-						scene.userData.controls.target.set( 0, 0, 0 );
-						scene.userData.controls.update();
+                                                scene.userData.statsElement = statsElement;
+                                                camera.position.set( 0, 6, 9 );
 
-					} else {
+                                                camera.lookAt( 0, 0, 0 );
+                                                scene.userData.controls.target.set( 0, 0, 0 );
+                                                scene.userData.controls.update();
 
-						const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2 );
-						object = new THREE.Mesh( flattenedGeometry, material );
-						object.castShadow = true;
-						object.rotation.z = Math.PI;
-						object.position.y = -4.9;
-						scene.add( object );
-					scene.userData.flattenedMesh = object;
-					scene.userData.statsElement = statsElement;
-						camera.position.set( 0, 1, 9 );
-						camera.lookAt( 0, -5, 0 );
-						scene.userData.controls.target.set( 0, -5, 0 );
-						scene.userData.controls.update();
-					}
+                                        } else {
 
-					const ground = new THREE.Mesh(
-						new THREE.PlaneGeometry( 20, 20, 20, 20 ),
-						new THREE.MeshPhongNodeMaterial( { color: 0xa0adaf, shininess: 150, alphaToCoverage: true } )
-					);
+                                                const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2 );
+                                                object = new THREE.Mesh( flattenedGeometry, material );
+                                                object.castShadow = true;
+                                                object.rotation.z = Math.PI;
+                                                object.position.y = -4.9;
+                                                scene.add( object );
+                                        scene.userData.flattenedMesh = object;
+                                        scene.userData.statsElement = statsElement;
+                                                camera.position.set( 0, 1, 9 );
+                                                camera.lookAt( 0, -5, 0 );
+                                                scene.userData.controls.target.set( 0, -5, 0 );
+                                                scene.userData.controls.update();
+                                        }
 
-					ground.rotation.x = - Math.PI / 2;
-					ground.position.y = - 5;
-					ground.receiveShadow = true;
-					scene.add( ground );
+                                        const ground = new THREE.Mesh(
+                                                new THREE.PlaneGeometry( 20, 20, 20, 20 ),
+                                                new THREE.MeshPhongNodeMaterial( { color: 0xa0adaf, shininess: 150, alphaToCoverage: true } )
+                                        );
 
-					const grid = new THREE.GridHelper( 20, 20, 0xcccccc, 0xaaaaaa );
-					grid.position.y = - 5;
-					grid.material.opacity = 0.75;
-					grid.material.transparent = true;
-					scene.add( grid );
+                                        ground.rotation.x = - Math.PI / 2;
+                                        ground.position.y = - 5;
+                                        ground.receiveShadow = true;
+                                        scene.add( ground );
 
-					groundMaterials.push( ground.material );
+                                        const grid = new THREE.GridHelper( 20, 20, 0xcccccc, 0xaaaaaa );
+                                        grid.position.y = - 5;
+                                        grid.material.opacity = 0.75;
+                                        grid.material.transparent = true;
+                                        scene.add( grid );
 
-					scene.add( new THREE.AmbientLight( 0xcccccc ) );
+                                        groundMaterials.push( ground.material );
 
-					const spotLight = new THREE.SpotLight( 0xffffff, 60 );
-					spotLight.angle = Math.PI / 5;
-					spotLight.penumbra = 0.2;
-					spotLight.position.set( 0, 3, 0 );
-					spotLight.castShadow = true;
-					spotLight.shadow.camera.near = 1;
-					spotLight.shadow.camera.far = 20;
-					spotLight.shadow.mapSize.width = 2048;
-					spotLight.shadow.mapSize.height = 2048;
-					spotLight.shadow.radius = 4;
-					scene.add( spotLight );
+                                        scene.add( new THREE.AmbientLight( 0xcccccc ) );
 
-					const dirLight = new THREE.DirectionalLight( 0x55505a, 3 );
-					dirLight.position.set( 0, 3, 0 );
-					dirLight.castShadow = true;
-					dirLight.shadow.camera.near = 1;
-					dirLight.shadow.camera.far = 20;
+                                        const spotLight = new THREE.SpotLight( 0xffffff, 60 );
+                                        spotLight.angle = Math.PI / 5;
+                                        spotLight.penumbra = 0.2;
+                                        spotLight.position.set( 0, 3, 0 );
+                                        spotLight.castShadow = true;
+                                        spotLight.shadow.camera.near = 1;
+                                        spotLight.shadow.camera.far = 20;
+                                        spotLight.shadow.mapSize.width = 2048;
+                                        spotLight.shadow.mapSize.height = 2048;
+                                        spotLight.shadow.radius = 4;
+                                        scene.add( spotLight );
 
-					dirLight.shadow.camera.right = 5;
-					dirLight.shadow.camera.left = - 5;
-					dirLight.shadow.camera.top = 5;
-					dirLight.shadow.camera.bottom = - 5;
+                                        const dirLight = new THREE.DirectionalLight( 0x55505a, 3 );
+                                        dirLight.position.set( 0, 3, 0 );
+                                        dirLight.castShadow = true;
+                                        dirLight.shadow.camera.near = 1;
+                                        dirLight.shadow.camera.far = 20;
 
-					dirLight.shadow.mapSize.width = 1024;
-					dirLight.shadow.mapSize.height = 1024;
-					scene.add( dirLight );
+                                        dirLight.shadow.camera.right = 5;
+                                        dirLight.shadow.camera.left = - 5;
+                                        dirLight.shadow.camera.top = 5;
+                                        dirLight.shadow.camera.bottom = - 5;
 
-					scenes.push( scene );
+                                        dirLight.shadow.mapSize.width = 1024;
+                                        dirLight.shadow.mapSize.height = 1024;
+                                        scene.add( dirLight );
 
-				}
+                                        scenes.push( scene );
+
+                                }
 
 
-				renderer = new THREE.WebGPURenderer( { canvas: canvas, antialias: true } );
-				renderer.shadowMap.enabled = true;
-				renderer.setClearColor( 0xffffff, 1 );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setAnimationLoop( animate );
-				renderer.inspector = new Inspector();
+                                renderer = new THREE.WebGPURenderer( { canvas: canvas, antialias: true } );
+                                renderer.shadowMap.enabled = true;
+                                renderer.setClearColor( 0xffffff, 1 );
+                                renderer.setPixelRatio( window.devicePixelRatio );
+                                renderer.setAnimationLoop( animate );
+                                renderer.inspector = new Inspector();
 scenes.forEach( updateStats );
-				const gui = renderer.inspector.createParameters( 'Clipping settings' );
-				const props = {
-					alphaToCoverage: true,
-				};
+                                const gui = renderer.inspector.createParameters( 'Clipping settings' );
+                                const props = {
+                                        alphaToCoverage: true,
+                                };
 
-				const folderConic = gui.addFolder( 'Conic Sections' );
-				const propsConic = {
+                                const folderConic = gui.addFolder( 'Conic Sections' );
+                                const propsConic = {
 
-					get 'Enabled'() {
+                                        get 'Enabled'() {
 
-						return knotClippingGroups[ 0 ].enabled;
+                                                return knotClippingGroups[ 0 ].enabled;
 
-					},
+                                        },
 
-					set 'Enabled'( v ) {
+                                        set 'Enabled'( v ) {
 
-						knotClippingGroups.forEach( function ( group ) {
+                                                knotClippingGroups.forEach( function ( group ) {
 
-							group.enabled = v;
+                                                        group.enabled = v;
 
-						} );
+                                                } );
 
-					},
+                                        },
 
-					get 'ClipShadows'() {
+                                        get 'ClipShadows'() {
 
-						return knotClippingGroups[ 0 ].clipShadows;
+                                                return knotClippingGroups[ 0 ].clipShadows;
 
-					},
+                                        },
 
-					set 'ClipShadows'( v ) {
+                                        set 'ClipShadows'( v ) {
 
-						knotClippingGroups.forEach( function ( group ) {
+                                                knotClippingGroups.forEach( function ( group ) {
 
-							group.clipShadows = v;
+                                                        group.clipShadows = v;
 
-						} );
+                                                } );
 
-					},
+                                        },
 
-					get 'coneAngle'() {
+                                        get 'coneAngle'() {
 
-						return coneAngle;
+                                                return coneAngle;
 
-					},
+                                        },
 
-					set 'coneAngle'( v ) {
+                                        set 'coneAngle'( v ) {
 
-						coneAngle = v;
-						updateGeometries();
+                                                coneAngle = v;
+                                                updateGeometries();
 
-					},
+                                        },
 
-					get 'coneHeight'() {
+                                        get 'coneHeight'() {
 
-						return coneHeight;
+                                                return coneHeight;
 
-					},
+                                        },
 
-					set 'coneHeight'( v ) {
+                                        set 'coneHeight'( v ) {
 
-						coneHeight = v;
-						updateGeometries();
+                                                coneHeight = v;
+                                                updateGeometries();
 
-					},
+                                        },
 
 
 get 'cutAngle'() {
 
-						return cutAngle;
+                                                return cutAngle;
 
-					},
+                                        },
 
-					set 'cutAngle'( v ) {
+                                        set 'cutAngle'( v ) {
 
-						cutAngle = v;
-							updateGeometries();
+                                                cutAngle = v;
+                                                        updateGeometries();
 
-						},
+                                                },
 
 get 'cutUpOffset'() {
 
-						return localPlane1.constant;
+                                                return localPlane1.constant;
 
-					},
+                                        },
 
-					set 'cutUpOffset'( v ) {
+                                        set 'cutUpOffset'( v ) {
 
-							localPlane1.constant = v;
-							updateGeometries();
+                                                        localPlane1.constant = v;
+                                                        updateGeometries();
 
-						},
+                                                },
 
 get 'cutDownOffset'() {
 
-						return localPlane2.constant;
+                                                return localPlane2.constant;
 
-					},
+                                        },
 
-					set 'cutDownOffset'( v ) {
+                                        set 'cutDownOffset'( v ) {
 
-							localPlane2.constant = v;
-							updateGeometries();
+                                                        localPlane2.constant = v;
+                                                        updateGeometries();
 
-						}
-					
-				} ;
+                                                }
 
-				folderConic.add( propsConic, 'Enabled' );
-				folderConic.add( propsConic, 'ClipShadows' );
-				folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
-				folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
-				folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
-				folderConic.add( propsConic, 'cutUpOffset', -3, 3 );
-				folderConic.add( propsConic, 'cutDownOffset', -3, 3 );
+                                } ;
+
+                                folderConic.add( propsConic, 'Enabled' );
+                                folderConic.add( propsConic, 'ClipShadows' );
+                                folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
+                                folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
+                                folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
+                                folderConic.add( propsConic, 'cutUpOffset', -3, 3 );
+                                folderConic.add( propsConic, 'cutDownOffset', -3, 3 );
 
 function updatePlaneNormals() {
 
 const normal1 = new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ).normalize();
-				const normal2 = new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ).normalize();
+                                const normal2 = new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ).normalize();
 
-						localPlane1.normal.copy( normal1 );
-						localPlane2.normal.copy( normal2 );
+                                                localPlane1.normal.copy( normal1 );
+                                                localPlane2.normal.copy( normal2 );
 
-					}
+                                        }
 
-					function updateGeometries() {
+                                        function updateGeometries() {
 
-						coneRadius = Math.tan( coneAngle ) * coneHeight;
-						updatePlaneNormals();
-						const newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
-						const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2 );
+                                                coneRadius = Math.tan( coneAngle ) * coneHeight;
+                                                updatePlaneNormals();
+                                                const newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                                const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2 );
 
-					scenes.forEach( function ( scene ) {
+                                        scenes.forEach( function ( scene ) {
 
-						if ( scene.userData.coneMesh ) {
+                                                if ( scene.userData.coneMesh ) {
 
-							scene.userData.coneMesh.geometry.dispose();
-							scene.userData.coneMesh.geometry = newConeGeometry;
+                                                        scene.userData.coneMesh.geometry.dispose();
+                                                        scene.userData.coneMesh.geometry = newConeGeometry;
 scene.userData.coneMesh.rotation.z = Math.PI;
-							
-						}
-
-						if ( scene.userData.flattenedMesh ) {
-
-							scene.userData.flattenedMesh.geometry.dispose();
-							scene.userData.flattenedMesh.geometry = flattenedGeometry;
-
-						}
-
-					} );
-
-					scenes.forEach( updateStats );
-
-				}
-
-				function computeBoundingBoxSizes( geometry ) {
-
-					const positions = geometry.getAttribute( 'position' );
-					const count = positions.count;
-
-					if ( count === 0 ) return new THREE.Vector3();
-
-					const mean = new THREE.Vector3();
-					for ( let i = 0; i < count; i ++ ) {
-						mean.x += positions.getX( i );
-						mean.y += positions.getY( i );
-						mean.z += positions.getZ( i );
-					}
-					mean.multiplyScalar( 1 / count );
-
-					const covariance = [ [ 0, 0, 0 ], [ 0, 0, 0 ], [ 0, 0, 0 ] ];
-					for ( let i = 0; i < count; i ++ ) {
-						const dx = positions.getX( i ) - mean.x;
-						const dy = positions.getY( i ) - mean.y;
-						const dz = positions.getZ( i ) - mean.z;
-						covariance[ 0 ][ 0 ] += dx * dx;
-						covariance[ 0 ][ 1 ] += dx * dy;
-						covariance[ 0 ][ 2 ] += dx * dz;
-						covariance[ 1 ][ 1 ] += dy * dy;
-						covariance[ 1 ][ 2 ] += dy * dz;
-						covariance[ 2 ][ 2 ] += dz * dz;
-					}
-
-					const scalar = 1 / count;
-					covariance[ 0 ][ 0 ] *= scalar;
-					covariance[ 0 ][ 1 ] *= scalar;
-					covariance[ 0 ][ 2 ] *= scalar;
-					covariance[ 1 ][ 1 ] *= scalar;
-					covariance[ 1 ][ 2 ] *= scalar;
-					covariance[ 2 ][ 2 ] *= scalar;
-					covariance[ 1 ][ 0 ] = covariance[ 0 ][ 1 ];
-					covariance[ 2 ][ 0 ] = covariance[ 0 ][ 2 ];
-					covariance[ 2 ][ 1 ] = covariance[ 1 ][ 2 ];
-
-					const result = jacobiEigenDecomposition( covariance );
-					const axisX = new THREE.Vector3( result.vectors[ 0 ][ 0 ], result.vectors[ 1 ][ 0 ], result.vectors[ 2 ][ 0 ] ).normalize();
-					const axisY = new THREE.Vector3( result.vectors[ 0 ][ 1 ], result.vectors[ 1 ][ 1 ], result.vectors[ 2 ][ 1 ] ).normalize();
-					const axisZ = new THREE.Vector3( result.vectors[ 0 ][ 2 ], result.vectors[ 1 ][ 2 ], result.vectors[ 2 ][ 2 ] ).normalize();
-
-					const min = new THREE.Vector3( Infinity, Infinity, Infinity );
-					const max = new THREE.Vector3( - Infinity, - Infinity, - Infinity );
-
-					for ( let i = 0; i < count; i ++ ) {
-						const position = new THREE.Vector3( positions.getX( i ), positions.getY( i ), positions.getZ( i ) ).sub( mean );
-						min.x = Math.min( min.x, position.dot( axisX ) );
-						max.x = Math.max( max.x, position.dot( axisX ) );
-						min.y = Math.min( min.y, position.dot( axisY ) );
-						max.y = Math.max( max.y, position.dot( axisY ) );
-						min.z = Math.min( min.z, position.dot( axisZ ) );
-						max.z = Math.max( max.z, position.dot( axisZ ) );
-					}
-
-					return new THREE.Vector3( max.x - min.x, max.y - min.y, max.z - min.z );
-
-				}
-
-				function jacobiEigenDecomposition( matrix ) {
-
-					const a = [
-						[ matrix[ 0 ][ 0 ], matrix[ 0 ][ 1 ], matrix[ 0 ][ 2 ] ],
-						[ matrix[ 1 ][ 0 ], matrix[ 1 ][ 1 ], matrix[ 1 ][ 2 ] ],
-						[ matrix[ 2 ][ 0 ], matrix[ 2 ][ 1 ], matrix[ 2 ][ 2 ] ]
-					];
-					const v = [
-						[ 1, 0, 0 ],
-						[ 0, 1, 0 ],
-						[ 0, 0, 1 ]
-					];
-
-					for ( let iteration = 0; iteration < 50; iteration ++ ) {
-						let p = 0;
-						let q = 1;
-						let max = Math.abs( a[ 0 ][ 1 ] );
-						if ( Math.abs( a[ 0 ][ 2 ] ) > max ) { p = 0; q = 2; max = Math.abs( a[ 0 ][ 2 ] ); }
-						if ( Math.abs( a[ 1 ][ 2 ] ) > max ) { p = 1; q = 2; max = Math.abs( a[ 1 ][ 2 ] ); }
-
-						if ( max < 1e-12 ) break;
-
-						const app = a[ p ][ p ];
-						const aqq = a[ q ][ q ];
-						const apq = a[ p ][ q ];
-						const phi = 0.5 * Math.atan2( 2 * apq, aqq - app );
-						const c = Math.cos( phi );
-						const s = Math.sin( phi );
-
-						const app1 = c * c * app - 2 * s * c * apq + s * s * aqq;
-						const aqq1 = s * s * app + 2 * s * c * apq + c * c * aqq;
-						a[ p ][ p ] = app1;
-						a[ q ][ q ] = aqq1;
-						a[ p ][ q ] = 0;
-						a[ q ][ p ] = 0;
 
-						for ( let r = 0; r < 3; r ++ ) {
-							if ( r === p || r === q ) continue;
+                                                }
+
+                                                if ( scene.userData.flattenedMesh ) {
+
+                                                        scene.userData.flattenedMesh.geometry.dispose();
+                                                        scene.userData.flattenedMesh.geometry = flattenedGeometry;
+
+                                                }
+
+                                        } );
+
+                                        scenes.forEach( updateStats );
+
+                                }
+
+                                function computeBoundingBoxSizes( geometry ) {
+
+                                        const positions = geometry.getAttribute( 'position' );
+                                        const count = positions.count;
+
+                                        if ( count === 0 ) return new THREE.Vector3();
+
+                                        const mean = new THREE.Vector3();
+                                        for ( let i = 0; i < count; i ++ ) {
+                                                mean.x += positions.getX( i );
+                                                mean.y += positions.getY( i );
+                                                mean.z += positions.getZ( i );
+                                        }
+                                        mean.multiplyScalar( 1 / count );
+
+                                        const covariance = [ [ 0, 0, 0 ], [ 0, 0, 0 ], [ 0, 0, 0 ] ];
+                                        for ( let i = 0; i < count; i ++ ) {
+                                                const dx = positions.getX( i ) - mean.x;
+                                                const dy = positions.getY( i ) - mean.y;
+                                                const dz = positions.getZ( i ) - mean.z;
+                                                covariance[ 0 ][ 0 ] += dx * dx;
+                                                covariance[ 0 ][ 1 ] += dx * dy;
+                                                covariance[ 0 ][ 2 ] += dx * dz;
+                                                covariance[ 1 ][ 1 ] += dy * dy;
+                                                covariance[ 1 ][ 2 ] += dy * dz;
+                                                covariance[ 2 ][ 2 ] += dz * dz;
+                                        }
+
+                                        const scalar = 1 / count;
+                                        covariance[ 0 ][ 0 ] *= scalar;
+                                        covariance[ 0 ][ 1 ] *= scalar;
+                                        covariance[ 0 ][ 2 ] *= scalar;
+                                        covariance[ 1 ][ 1 ] *= scalar;
+                                        covariance[ 1 ][ 2 ] *= scalar;
+                                        covariance[ 2 ][ 2 ] *= scalar;
+                                        covariance[ 1 ][ 0 ] = covariance[ 0 ][ 1 ];
+                                        covariance[ 2 ][ 0 ] = covariance[ 0 ][ 2 ];
+                                        covariance[ 2 ][ 1 ] = covariance[ 1 ][ 2 ];
+
+                                        const result = jacobiEigenDecomposition( covariance );
+                                        const axisX = new THREE.Vector3( result.vectors[ 0 ][ 0 ], result.vectors[ 1 ][ 0 ], result.vectors[ 2 ][ 0 ] ).normalize();
+                                        const axisY = new THREE.Vector3( result.vectors[ 0 ][ 1 ], result.vectors[ 1 ][ 1 ], result.vectors[ 2 ][ 1 ] ).normalize();
+                                        const axisZ = new THREE.Vector3( result.vectors[ 0 ][ 2 ], result.vectors[ 1 ][ 2 ], result.vectors[ 2 ][ 2 ] ).normalize();
+
+                                        const min = new THREE.Vector3( Infinity, Infinity, Infinity );
+                                        const max = new THREE.Vector3( - Infinity, - Infinity, - Infinity );
+
+                                        for ( let i = 0; i < count; i ++ ) {
+                                                const position = new THREE.Vector3( positions.getX( i ), positions.getY( i ), positions.getZ( i ) ).sub( mean );
+                                                min.x = Math.min( min.x, position.dot( axisX ) );
+                                                max.x = Math.max( max.x, position.dot( axisX ) );
+                                                min.y = Math.min( min.y, position.dot( axisY ) );
+                                                max.y = Math.max( max.y, position.dot( axisY ) );
+                                                min.z = Math.min( min.z, position.dot( axisZ ) );
+                                                max.z = Math.max( max.z, position.dot( axisZ ) );
+                                        }
+
+                                        return new THREE.Vector3( max.x - min.x, max.y - min.y, max.z - min.z );
+
+                                }
+
+                                function jacobiEigenDecomposition( matrix ) {
+
+                                        const a = [
+                                                [ matrix[ 0 ][ 0 ], matrix[ 0 ][ 1 ], matrix[ 0 ][ 2 ] ],
+                                                [ matrix[ 1 ][ 0 ], matrix[ 1 ][ 1 ], matrix[ 1 ][ 2 ] ],
+                                                [ matrix[ 2 ][ 0 ], matrix[ 2 ][ 1 ], matrix[ 2 ][ 2 ] ]
+                                        ];
+                                        const v = [
+                                                [ 1, 0, 0 ],
+                                                [ 0, 1, 0 ],
+                                                [ 0, 0, 1 ]
+                                        ];
 
-							const arp = a[ Math.min( r, p ) ][ Math.max( r, p ) ];
-							const arq = a[ Math.min( r, q ) ][ Math.max( r, q ) ];
-							const arp1 = c * arp - s * arq;
-							const arq1 = s * arp + c * arq;
+                                        for ( let iteration = 0; iteration < 50; iteration ++ ) {
+                                                let p = 0;
+                                                let q = 1;
+                                                let max = Math.abs( a[ 0 ][ 1 ] );
+                                                if ( Math.abs( a[ 0 ][ 2 ] ) > max ) { p = 0; q = 2; max = Math.abs( a[ 0 ][ 2 ] ); }
+                                                if ( Math.abs( a[ 1 ][ 2 ] ) > max ) { p = 1; q = 2; max = Math.abs( a[ 1 ][ 2 ] ); }
 
-							if ( r < p ) a[ r ][ p ] = arp1;
-							else a[ p ][ r ] = arp1;
+                                                if ( max < 1e-12 ) break;
 
-							if ( r < q ) a[ r ][ q ] = arq1;
-							else a[ q ][ r ] = arq1;
-						}
+                                                const app = a[ p ][ p ];
+                                                const aqq = a[ q ][ q ];
+                                                const apq = a[ p ][ q ];
+                                                const phi = 0.5 * Math.atan2( 2 * apq, aqq - app );
+                                                const c = Math.cos( phi );
+                                                const s = Math.sin( phi );
 
-						for ( let r = 0; r < 3; r ++ ) {
-							const vrp = v[ r ][ p ];
-							const vrq = v[ r ][ q ];
-							v[ r ][ p ] = c * vrp - s * vrq;
-							v[ r ][ q ] = s * vrp + c * vrq;
-						}
-					}
-
-					return { values: [ a[ 0 ][ 0 ], a[ 1 ][ 1 ], a[ 2 ][ 2 ] ], vectors: v };
-
-				}
-
-				function computeSurfacePlaneMaxAngle( geometry, plane1, plane2 ) {
-
-					const positions = geometry.getAttribute( 'position' );
-					const index = geometry.index;
-					const count = index ? index.count : positions.count;
-					const vA = new THREE.Vector3();
-					const vB = new THREE.Vector3();
-					const vC = new THREE.Vector3();
-					const normal = new THREE.Vector3();
-					let maxAngle = 0;
-
-					const planeNormals = [ plane1.normal, plane2.normal ];
-
-					for ( let i = 0; i < count; i += 3 ) {
-						const aIndex = index ? index.getX( i ) : i;
-						const bIndex = index ? index.getX( i + 1 ) : i + 1;
-						const cIndex = index ? index.getX( i + 2 ) : i + 2;
-
-						vA.set( positions.getX( aIndex ), positions.getY( aIndex ), positions.getZ( aIndex ) );
-						vB.set( positions.getX( bIndex ), positions.getY( bIndex ), positions.getZ( bIndex ) );
-						vC.set( positions.getX( cIndex ), positions.getY( cIndex ), positions.getZ( cIndex ) );
-
-						normal.subVectors( vB, vA ).cross( vC.clone().sub( vA ) ).normalize();
-
-						for ( let j = 0; j < planeNormals.length; j ++ ) {
-							const angle = Math.abs( Math.PI / 2 - normal.angleTo( planeNormals[ j ] ) );
-							maxAngle = Math.max( maxAngle, angle );
-						}
-					}
-
-					return maxAngle;
-
-				}
-
-				function formatNumber( value ) {
-
-					return value.toFixed( 2 );
-
-				}
-
-				function updateStats( scene ) {
-
-					const statsElement = scene.userData.statsElement;
-					if ( ! statsElement ) return;
-
-					let text = '';
-
-					if ( scene.userData.coneMesh ) {
-				const clippedConeGeometry = createClippedConeGeometry( coneRadius, coneHeight, coneSegments, localPlane1, localPlane2 );
-				const size = computeBoundingBoxSizes( clippedConeGeometry );
-				const maxAngle = computeSurfacePlaneMaxAngle( clippedConeGeometry, localPlane1, localPlane2 );
-				text = 'Oriented bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z ) + '\n';
-				text += 'Max surface-plane angle: ' + ( ( maxAngle * 180 / Math.PI ).toFixed( 1 ) ) + '°';
-				clippedConeGeometry.dispose();
-
-					if ( scene.userData.flattenedMesh ) {
-						const flattenedGeometry = scene.userData.flattenedMesh.geometry;
-						flattenedGeometry.computeBoundingBox();
-						const size = new THREE.Vector3();
-						flattenedGeometry.boundingBox.getSize( size );
-						const triangles = flattenedGeometry.index ? flattenedGeometry.index.count / 3 : flattenedGeometry.getAttribute( 'position' ).count / 3;
-						text = 'Triangles: ' + triangles + '\n';
-						text += 'Bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z );
-					}
-
-					statsElement.innerText = text;
-
-				}
-
-				function createFlattenedConeGeometry( radius, height, radialSegments, coneAngle, plane1, plane2 ) {
-
-					const positions = [];
-					const normals = [];
-					const uvs = [];
-					const indices = [];
-
-					const heightSegments = 20;
-					const halfHeight = height / 2;
-					const k = 1 / Math.sin( coneAngle );
-
-					const vertices = [];
-					for ( let iy = 0; iy <= heightSegments; iy ++ ) {
-						const y = halfHeight - ( iy / heightSegments ) * height;
-						const r = radius * ( iy / heightSegments );
-
-						for ( let ix = 0; ix <= radialSegments; ix ++ ) {
-							const theta = ix / radialSegments * Math.PI * 2;
-							const x = r * Math.cos( theta );
-							const z = r * Math.sin( theta );
-							const position = new THREE.Vector3( x, y, z );
-							vertices.push( { position: position, theta: theta, r: r } );
-						}
-					}
-
-					const clipPolygon = function ( polygon, plane ) {
-						const output = [];
-						const count = polygon.length;
-
-						for ( let i = 0; i < count; i ++ ) {
-							const a = polygon[ i ];
-							const b = polygon[ ( i + 1 ) % count ];
-							const da = plane.distanceToPoint( a.position );
-							const db = plane.distanceToPoint( b.position );
-							const aInside = da >= 0;
-							const bInside = db >= 0;
-
-							if ( aInside ) output.push( a );
-							if ( aInside !== bInside ) {
-								const t = da / ( da - db );
-								const interpPosition = a.position.clone().lerp( b.position, t );
-								const interpTheta = a.theta + ( b.theta - a.theta ) * t;
-								const interpR = a.r + ( b.r - a.r ) * t;
-								output.push( { position: interpPosition, theta: interpTheta, r: interpR } );
-							}
-						}
-
-						return output;
-					};
-
-					for ( let iy = 0; iy < heightSegments; iy ++ ) {
-						for ( let ix = 0; ix < radialSegments; ix ++ ) {
-							const baseIndex = iy * ( radialSegments + 1 ) + ix;
-							const quad = [
-								vertices[ baseIndex ],
-								vertices[ baseIndex + 1 ],
-								vertices[ baseIndex + radialSegments + 2 ],
-								vertices[ baseIndex + radialSegments + 1 ]
-							];
-
-							let clipped = clipPolygon( quad, plane1 );
-							clipped = clipPolygon( clipped, plane2 );
-
-							if ( clipped.length < 3 ) continue;
-
-							for ( let j = 1; j < clipped.length - 1; j ++ ) {
-								const a = clipped[ 0 ];
-								const b = clipped[ j ];
-								const c = clipped[ j + 1 ];
-								const base = positions.length / 3;
-
-								[ a, b, c ].forEach( function ( vert ) {
-									const R = vert.r * k;
-									const theta = vert.theta / k;
-									const xNet = R * Math.cos( theta );
-									const zNet = R * Math.sin( theta );
-									positions.push( xNet, 0, zNet);
-									normals.push( 0, 1, 0 );
-									uvs.push( ( vert.theta / ( Math.PI * 2 ) ), ( halfHeight - vert.position.y ) / height );
-								} );
-
-								indices.push( base, base + 1, base + 2 );
-							}
-						}
-					}
-
-					const geometry = new THREE.BufferGeometry();
-					geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
-					geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ) );
-					geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( uvs, 2 ) );
-					geometry.setIndex( indices );
-
-					geometry.computeBoundingBox();
-					if ( geometry.boundingBox ) {
-						const center = new THREE.Vector3();
-						geometry.boundingBox.getCenter( center );
-						geometry.translate( - center.x, 0, - center.z );
-					}
-
-					return geometry;
-				}
-
-			function createClippedConeGeometry( radius, height, radialSegments, plane1, plane2 ) {
-
-				const positions = [];
-				const normals = [];
-				const indices = [];
-
-				const heightSegments = 20;
-				const halfHeight = height / 2;
-
-				const vertices = [];
-				for ( let iy = 0; iy <= heightSegments; iy ++ ) {
-					const y = halfHeight - ( iy / heightSegments ) * height;
-					const r = radius * ( iy / heightSegments );
-
-					for ( let ix = 0; ix <= radialSegments; ix ++ ) {
-						const theta = ix / radialSegments * Math.PI * 2;
-						const x = r * Math.cos( theta );
-						const z = r * Math.sin( theta );
-						vertices.push( { position: new THREE.Vector3( x, y, z ) } );
-					}
-				}
-
-				const clipPolygon = function ( polygon, plane ) {
-					const output = [];
-					const count = polygon.length;
-
-					for ( let i = 0; i < count; i ++ ) {
-						const a = polygon[ i ];
-						const b = polygon[ ( i + 1 ) % count ];
-						const da = plane.distanceToPoint( a.position );
-						const db = plane.distanceToPoint( b.position );
-						const aInside = da >= 0;
-						const bInside = db >= 0;
-
-						if ( aInside ) output.push( a );
-						if ( aInside !== bInside ) {
-							const t = da / ( da - db );
-							const interpPosition = a.position.clone().lerp( b.position, t );
-							output.push( { position: interpPosition } );
-						}
-					}
-
-					return output;
-				};
-
-				for ( let iy = 0; iy < heightSegments; iy ++ ) {
-					for ( let ix = 0; ix < radialSegments; ix ++ ) {
-						const baseIndex = iy * ( radialSegments + 1 ) + ix;
-						const quad = [
-							vertices[ baseIndex ],
-							vertices[ baseIndex + 1 ],
-							vertices[ baseIndex + radialSegments + 2 ],
-							vertices[ baseIndex + radialSegments + 1 ]
-						];
-
-						let clipped = clipPolygon( quad, plane1 );
-						clipped = clipPolygon( clipped, plane2 );
-
-						if ( clipped.length < 3 ) continue;
-
-						for ( let j = 1; j < clipped.length - 1; j ++ ) {
-							const a = clipped[ 0 ];
-							const b = clipped[ j ];
-							const c = clipped[ j + 1 ];
-							const base = positions.length / 3;
-
-							const vA = a.position;
-						const vB = b.position;
-						const vC = c.position;
-						const normal = new THREE.Vector3().subVectors( vB, vA ).cross( new THREE.Vector3().subVectors( vC, vA ) ).normalize();
-
-							[ a, b, c ].forEach( function ( vert ) {
-								positions.push( vert.position.x, vert.position.y, vert.position.z );
-								normals.push( normal.x, normal.y, normal.z );
-							} );
-
-							indices.push( base, base + 1, base + 2 );
-						}
-					}
-				}
-
-				const geometry = new THREE.BufferGeometry();
-				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
-				geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ) );
-				geometry.setIndex( indices );
-
-				return geometry;
-
-			}
-
-
-				}
-
-			}
-
-			function animate() {
-
-				updateSize();
-
-				canvas.style.transform = `translateY(${window.scrollY}px)`;
-
-				renderer.setClearColor( 0xffffff );
-				renderer.setScissorTest( false );
-				renderer.setViewport( 0, 0, canvas.width, canvas.height );
-				renderer.clear();
-
-				//renderer.setClearColor( 0xe0e0e0 );
-				renderer.setScissorTest( true );
-
-				scenes.forEach( function ( scene ) {
-
-					// so something moves
-					//scene.children[ 0 ].rotation.y = Date.now() * 0.001;
-
-					// get the element that is a place holder for where we want to
-					// draw the scene
-					const element = scene.userData.element;
-
-					// get its position relative to the page's viewport
-					const rect = element.getBoundingClientRect();
-
-					// check if it's offscreen. If so skip it
-					if ( rect.bottom < 0 || rect.top > renderer.domElement.clientHeight ||
-						 rect.right < 0 || rect.left > renderer.domElement.clientWidth ) {
-
-						return; // it's off screen
-
-					}
-
-					// set the viewport
-					const width = rect.right - rect.left;
-					const height = rect.bottom - rect.top;
-					const left = rect.left;
-					const top = rect.top;
-
-					renderer.setViewport( left, top, width, height );
-					renderer.setScissor( left, top, width, height );
-
-					const camera = scene.userData.camera;
-
-					//camera.aspect = width / height; // not changing in this example
-					//camera.updateProjectionMatrix();
-
-					//scene.userData.controls.update();
-
-					renderer.render( scene, camera );
-
-				} );
-
-			}
-
-		</script>
-
-	</body>
+                                                const app1 = c * c * app - 2 * s * c * apq + s * s * aqq;
+                                                const aqq1 = s * s * app + 2 * s * c * apq + c * c * aqq;
+                                                a[ p ][ p ] = app1;
+                                                a[ q ][ q ] = aqq1;
+                                                a[ p ][ q ] = 0;
+                                                a[ q ][ p ] = 0;
+
+                                                for ( let r = 0; r < 3; r ++ ) {
+                                                        if ( r === p || r === q ) continue;
+
+                                                        const arp = a[ Math.min( r, p ) ][ Math.max( r, p ) ];
+                                                        const arq = a[ Math.min( r, q ) ][ Math.max( r, q ) ];
+                                                        const arp1 = c * arp - s * arq;
+                                                        const arq1 = s * arp + c * arq;
+
+                                                        if ( r < p ) a[ r ][ p ] = arp1;
+                                                        else a[ p ][ r ] = arp1;
+
+                                                        if ( r < q ) a[ r ][ q ] = arq1;
+                                                        else a[ q ][ r ] = arq1;
+                                                }
+
+                                                for ( let r = 0; r < 3; r ++ ) {
+                                                        const vrp = v[ r ][ p ];
+                                                        const vrq = v[ r ][ q ];
+                                                        v[ r ][ p ] = c * vrp - s * vrq;
+                                                        v[ r ][ q ] = s * vrp + c * vrq;
+                                                }
+                                        }
+
+                                        return { values: [ a[ 0 ][ 0 ], a[ 1 ][ 1 ], a[ 2 ][ 2 ] ], vectors: v };
+
+                                }
+
+                                function computeSurfacePlaneMaxAngle( geometry, plane1, plane2 ) {
+
+                                        const positions = geometry.getAttribute( 'position' );
+                                        const index = geometry.index;
+                                        const count = index ? index.count : positions.count;
+                                        const vA = new THREE.Vector3();
+                                        const vB = new THREE.Vector3();
+                                        const vC = new THREE.Vector3();
+                                        const normal = new THREE.Vector3();
+                                        let maxAngle = 0;
+
+                                        const planeNormals = [ plane1.normal, plane2.normal ];
+
+                                        for ( let i = 0; i < count; i += 3 ) {
+                                                const aIndex = index ? index.getX( i ) : i;
+                                                const bIndex = index ? index.getX( i + 1 ) : i + 1;
+                                                const cIndex = index ? index.getX( i + 2 ) : i + 2;
+
+                                                vA.set( positions.getX( aIndex ), positions.getY( aIndex ), positions.getZ( aIndex ) );
+                                                vB.set( positions.getX( bIndex ), positions.getY( bIndex ), positions.getZ( bIndex ) );
+                                                vC.set( positions.getX( cIndex ), positions.getY( cIndex ), positions.getZ( cIndex ) );
+
+                                                normal.subVectors( vB, vA ).cross( vC.clone().sub( vA ) ).normalize();
+
+                                                for ( let j = 0; j < planeNormals.length; j ++ ) {
+                                                        const angle = Math.abs( Math.PI / 2 - normal.angleTo( planeNormals[ j ] ) );
+                                                        maxAngle = Math.max( maxAngle, angle );
+                                                }
+                                        }
+
+                                        return maxAngle;
+
+                                }
+
+                                function formatNumber( value ) {
+
+                                        return value.toFixed( 2 );
+
+                                }
+
+                                function updateStats( scene ) {
+
+                                        const statsElement = scene.userData.statsElement;
+                                        if ( ! statsElement ) return;
+
+                                        let text = '';
+
+                                        if ( scene.userData.coneMesh ) {
+
+                                                const clippedConeGeometry = createClippedConeGeometry( coneRadius, coneHeight, coneSegments, localPlane1, localPlane2 );
+                                                const size = computeBoundingBoxSizes( clippedConeGeometry );
+                                                const maxAngle = computeSurfacePlaneMaxAngle( clippedConeGeometry, localPlane1, localPlane2 );
+                                                text = 'Oriented bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z ) + '\n';
+                                                text += 'Max surface-plane angle: ' + ( ( maxAngle * 180 / Math.PI ).toFixed( 1 ) ) + '°';
+                                                clippedConeGeometry.dispose();
+
+                                        }
+
+                                        if ( scene.userData.flattenedMesh ) {
+
+                                                const flattenedGeometry = scene.userData.flattenedMesh.geometry;
+                                                flattenedGeometry.computeBoundingBox();
+                                                const size = new THREE.Vector3();
+                                                flattenedGeometry.boundingBox.getSize( size );
+                                                const triangles = flattenedGeometry.index ? flattenedGeometry.index.count / 3 : flattenedGeometry.getAttribute( 'position' ).count / 3;
+                                                text = 'Triangles: ' + triangles + '\n';
+                                                text += 'Bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z );
+
+                                        }
+
+                                        statsElement.innerText = text;
+
+                                }
+
+                                function createFlattenedConeGeometry( radius, height, radialSegments, coneAngle, plane1, plane2 ) {
+
+                                        const positions = [];
+                                        const normals = [];
+                                        const uvs = [];
+                                        const indices = [];
+
+                                        const heightSegments = 20;
+                                        const halfHeight = height / 2;
+                                        const k = 1 / Math.sin( coneAngle );
+
+                                        const vertices = [];
+                                        for ( let iy = 0; iy <= heightSegments; iy ++ ) {
+                                                const y = halfHeight - ( iy / heightSegments ) * height;
+                                                const r = radius * ( iy / heightSegments );
+
+                                                for ( let ix = 0; ix <= radialSegments; ix ++ ) {
+                                                        const theta = ix / radialSegments * Math.PI * 2;
+                                                        const x = r * Math.cos( theta );
+                                                        const z = r * Math.sin( theta );
+                                                        const position = new THREE.Vector3( x, y, z );
+                                                        vertices.push( { position: position, theta: theta, r: r } );
+                                                }
+                                        }
+
+                                        const clipPolygon = function ( polygon, plane ) {
+                                                const output = [];
+                                                const count = polygon.length;
+
+                                                for ( let i = 0; i < count; i ++ ) {
+                                                        const a = polygon[ i ];
+                                                        const b = polygon[ ( i + 1 ) % count ];
+                                                        const da = plane.distanceToPoint( a.position );
+                                                        const db = plane.distanceToPoint( b.position );
+                                                        const aInside = da >= 0;
+                                                        const bInside = db >= 0;
+
+                                                        if ( aInside ) output.push( a );
+                                                        if ( aInside !== bInside ) {
+                                                                const t = da / ( da - db );
+                                                                const interpPosition = a.position.clone().lerp( b.position, t );
+                                                                const interpTheta = a.theta + ( b.theta - a.theta ) * t;
+                                                                const interpR = a.r + ( b.r - a.r ) * t;
+                                                                output.push( { position: interpPosition, theta: interpTheta, r: interpR } );
+                                                        }
+                                                }
+
+                                                return output;
+                                        };
+
+                                        for ( let iy = 0; iy < heightSegments; iy ++ ) {
+                                                for ( let ix = 0; ix < radialSegments; ix ++ ) {
+                                                        const baseIndex = iy * ( radialSegments + 1 ) + ix;
+                                                        const quad = [
+                                                                vertices[ baseIndex ],
+                                                                vertices[ baseIndex + 1 ],
+                                                                vertices[ baseIndex + radialSegments + 2 ],
+                                                                vertices[ baseIndex + radialSegments + 1 ]
+                                                        ];
+
+                                                        let clipped = clipPolygon( quad, plane1 );
+                                                        clipped = clipPolygon( clipped, plane2 );
+
+                                                        if ( clipped.length < 3 ) continue;
+
+                                                        for ( let j = 1; j < clipped.length - 1; j ++ ) {
+                                                                const a = clipped[ 0 ];
+                                                                const b = clipped[ j ];
+                                                                const c = clipped[ j + 1 ];
+                                                                const base = positions.length / 3;
+
+                                                                [ a, b, c ].forEach( function ( vert ) {
+                                                                        const R = vert.r * k;
+                                                                        const theta = vert.theta / k;
+                                                                        const xNet = R * Math.cos( theta );
+                                                                        const zNet = R * Math.sin( theta );
+                                                                        positions.push( xNet, 0, zNet);
+                                                                        normals.push( 0, 1, 0 );
+                                                                        uvs.push( ( vert.theta / ( Math.PI * 2 ) ), ( halfHeight - vert.position.y ) / height );
+                                                                } );
+
+                                                                indices.push( base, base + 1, base + 2 );
+                                                        }
+                                                }
+                                        }
+
+                                        const geometry = new THREE.BufferGeometry();
+                                        geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+                                        geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ) );
+                                        geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( uvs, 2 ) );
+                                        geometry.setIndex( indices );
+
+                                        geometry.computeBoundingBox();
+                                        if ( geometry.boundingBox ) {
+                                                const center = new THREE.Vector3();
+                                                geometry.boundingBox.getCenter( center );
+                                                geometry.translate( - center.x, 0, - center.z );
+                                        }
+
+                                        return geometry;
+                                }
+
+                        function createClippedConeGeometry( radius, height, radialSegments, plane1, plane2 ) {
+
+                                const positions = [];
+                                const normals = [];
+                                const indices = [];
+
+                                const heightSegments = 20;
+                                const halfHeight = height / 2;
+
+                                const vertices = [];
+                                for ( let iy = 0; iy <= heightSegments; iy ++ ) {
+                                        const y = halfHeight - ( iy / heightSegments ) * height;
+                                        const r = radius * ( iy / heightSegments );
+
+                                        for ( let ix = 0; ix <= radialSegments; ix ++ ) {
+                                                const theta = ix / radialSegments * Math.PI * 2;
+                                                const x = r * Math.cos( theta );
+                                                const z = r * Math.sin( theta );
+                                                vertices.push( { position: new THREE.Vector3( x, y, z ) } );
+                                        }
+                                }
+
+                                const clipPolygon = function ( polygon, plane ) {
+                                        const output = [];
+                                        const count = polygon.length;
+
+                                        for ( let i = 0; i < count; i ++ ) {
+                                                const a = polygon[ i ];
+                                                const b = polygon[ ( i + 1 ) % count ];
+                                                const da = plane.distanceToPoint( a.position );
+                                                const db = plane.distanceToPoint( b.position );
+                                                const aInside = da >= 0;
+                                                const bInside = db >= 0;
+
+                                                if ( aInside ) output.push( a );
+                                                if ( aInside !== bInside ) {
+                                                        const t = da / ( da - db );
+                                                        const interpPosition = a.position.clone().lerp( b.position, t );
+                                                        output.push( { position: interpPosition } );
+                                                }
+                                        }
+
+                                        return output;
+                                };
+
+                                for ( let iy = 0; iy < heightSegments; iy ++ ) {
+                                        for ( let ix = 0; ix < radialSegments; ix ++ ) {
+                                                const baseIndex = iy * ( radialSegments + 1 ) + ix;
+                                                const quad = [
+                                                        vertices[ baseIndex ],
+                                                        vertices[ baseIndex + 1 ],
+                                                        vertices[ baseIndex + radialSegments + 2 ],
+                                                        vertices[ baseIndex + radialSegments + 1 ]
+                                                ];
+
+                                                let clipped = clipPolygon( quad, plane1 );
+                                                clipped = clipPolygon( clipped, plane2 );
+
+                                                if ( clipped.length < 3 ) continue;
+
+                                                for ( let j = 1; j < clipped.length - 1; j ++ ) {
+                                                        const a = clipped[ 0 ];
+                                                        const b = clipped[ j ];
+                                                        const c = clipped[ j + 1 ];
+                                                        const base = positions.length / 3;
+
+                                                        const vA = a.position;
+                                                const vB = b.position;
+                                                const vC = c.position;
+                                                const normal = new THREE.Vector3().subVectors( vB, vA ).cross( new THREE.Vector3().subVectors( vC, vA ) ).normalize();
+
+                                                        [ a, b, c ].forEach( function ( vert ) {
+                                                                positions.push( vert.position.x, vert.position.y, vert.position.z );
+                                                                normals.push( normal.x, normal.y, normal.z );
+                                                        } );
+
+                                                        indices.push( base, base + 1, base + 2 );
+                                                }
+                                        }
+                                }
+
+                                const geometry = new THREE.BufferGeometry();
+                                geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+                                geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ) );
+                                geometry.setIndex( indices );
+
+                                return geometry;
+
+                        }
+
+                        }
+
+                        function updateSize() {
+
+                                const width = canvas.clientWidth;
+                                const height = canvas.clientHeight;
+
+                                if ( canvas.width !== width || canvas.height !== height ) {
+
+                                        renderer.setSize( width, height, false );
+
+                                }
+
+                        }
+
+                        function animate() {
+
+                                updateSize();
+
+                                canvas.style.transform = `translateY(${window.scrollY}px)`;
+
+                                renderer.setClearColor( 0xffffff );
+                                renderer.setScissorTest( false );
+                                renderer.setViewport( 0, 0, canvas.width, canvas.height );
+                                renderer.clear();
+
+                                //renderer.setClearColor( 0xe0e0e0 );
+                                renderer.setScissorTest( true );
+
+                                scenes.forEach( function ( scene ) {
+
+                                        // so something moves
+                                        //scene.children[ 0 ].rotation.y = Date.now() * 0.001;
+
+                                        // get the element that is a place holder for where we want to
+                                        // draw the scene
+                                        const element = scene.userData.element;
+
+                                        // get its position relative to the page's viewport
+                                        const rect = element.getBoundingClientRect();
+
+                                        // check if it's offscreen. If so skip it
+                                        if ( rect.bottom < 0 || rect.top > renderer.domElement.clientHeight ||
+                                                 rect.right < 0 || rect.left > renderer.domElement.clientWidth ) {
+
+                                                return; // it's off screen
+
+                                        }
+
+                                        // set the viewport
+                                        const width = rect.right - rect.left;
+                                        const height = rect.bottom - rect.top;
+                                        const left = rect.left;
+                                        const top = rect.top;
+
+                                        renderer.setViewport( left, top, width, height );
+                                        renderer.setScissor( left, top, width, height );
+
+                                        const camera = scene.userData.camera;
+
+                                        //camera.aspect = width / height; // not changing in this example
+                                        //camera.updateProjectionMatrix();
+
+                                        //scene.userData.controls.update();
+
+                                        renderer.render( scene, camera );
+
+                                } );
+
+                        }
+
+                </script>
+
+        </body>
 </html>
