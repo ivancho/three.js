@@ -319,6 +319,153 @@ scenes.forEach( updateStats );
                                         alphaToCoverage: true,
                                 };
 
+                                const STORAGE_KEY = 'threejs.webgpu_multiple_elements.params';
+                                const HISTORY_LIMIT = 20;
+                                const AUTOSAVE_DEBOUNCE_MS = 150;
+                                const EMPTY_SELECT = '—';
+
+                                let isRestoring = false;
+                                let autosaveTimer = null;
+                                let store = { autosave: [], named: {} };
+                                const conicEditors = {};
+                                const persistEditors = {};
+
+                                function createEmptyStore() {
+
+                                        return { autosave: [], named: {} };
+
+                                }
+
+                                function loadStore() {
+
+                                        try {
+
+                                                const raw = localStorage.getItem( STORAGE_KEY );
+                                                if ( ! raw ) return createEmptyStore();
+
+                                                const parsed = JSON.parse( raw );
+                                                if ( ! parsed || typeof parsed !== 'object' ) return createEmptyStore();
+
+                                                return {
+                                                        autosave: Array.isArray( parsed.autosave ) ? parsed.autosave : [],
+                                                        named: parsed.named && typeof parsed.named === 'object' ? parsed.named : {}
+                                                };
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to load params from localStorage', e );
+                                                return createEmptyStore();
+
+                                        }
+
+                                }
+
+                                function saveStore() {
+
+                                        try {
+
+                                                localStorage.setItem( STORAGE_KEY, JSON.stringify( store ) );
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to save params to localStorage', e );
+
+                                        }
+
+                                }
+
+                                function pushVersion( list, snapshot, limit = HISTORY_LIMIT ) {
+
+                                        list.unshift( snapshot );
+                                        if ( list.length > limit ) list.length = limit;
+
+                                }
+
+                                function paramsEqual( a, b ) {
+
+                                        if ( ! a || ! b ) return false;
+
+                                        return a.Enabled === b.Enabled &&
+                                                a.ClipShadows === b.ClipShadows &&
+                                                a.coneAngle === b.coneAngle &&
+                                                a.coneHeight === b.coneHeight &&
+                                                a.cutAngle === b.cutAngle &&
+                                                a.cutUpOffset === b.cutUpOffset &&
+                                                a.cutDownOffset === b.cutDownOffset;
+
+                                }
+
+                                function getParams() {
+
+                                        return {
+                                                Enabled: knotClippingGroups[ 0 ].enabled,
+                                                ClipShadows: knotClippingGroups[ 0 ].clipShadows,
+                                                coneAngle: coneAngle,
+                                                coneHeight: coneHeight,
+                                                cutAngle: cutAngle,
+                                                cutUpOffset: localPlane1.constant,
+                                                cutDownOffset: localPlane2.constant
+                                        };
+
+                                }
+
+                                function formatSnapshotLabel( entry, index ) {
+
+                                        return index + ' · ' + new Date( entry.t ).toLocaleString();
+
+                                }
+
+                                function parseSnapshotIndex( label ) {
+
+                                        const index = parseInt( label, 10 );
+                                        return Number.isFinite( index ) ? index : - 1;
+
+                                }
+
+                                function replaceSelectOptions( editor, options, selectedValue ) {
+
+                                        if ( ! editor ) return;
+
+                                        editor.options = options;
+                                        const select = editor.select;
+                                        select.innerHTML = '';
+
+                                        options.forEach( function ( opt ) {
+
+                                                const optionEl = document.createElement( 'option' );
+                                                optionEl.value = opt;
+                                                optionEl.textContent = opt;
+                                                select.appendChild( optionEl );
+
+                                        } );
+
+                                        const nextValue = options.includes( selectedValue ) ? selectedValue : ( options[ 0 ] || EMPTY_SELECT );
+                                        editor.setValue( nextValue );
+
+                                }
+
+                                function scheduleAutosave() {
+
+                                        if ( isRestoring ) return;
+
+                                        clearTimeout( autosaveTimer );
+                                        autosaveTimer = setTimeout( commitAutosave, AUTOSAVE_DEBOUNCE_MS );
+
+                                }
+
+                                function commitAutosave() {
+
+                                        if ( isRestoring ) return;
+
+                                        const params = getParams();
+                                        if ( store.autosave[ 0 ] && paramsEqual( store.autosave[ 0 ].params, params ) ) return;
+
+                                        pushVersion( store.autosave, { t: Date.now(), params: params } );
+                                        saveStore();
+                                        refreshPersistenceUI();
+
+                                }
+
                                 const folderConic = gui.addFolder( 'Conic Sections' );
                                 const propsConic = {
 
@@ -335,6 +482,7 @@ scenes.forEach( updateStats );
                                                         group.enabled = v;
 
                                                 } );
+                                                scheduleAutosave();
 
                                         },
 
@@ -351,6 +499,7 @@ scenes.forEach( updateStats );
                                                         group.clipShadows = v;
 
                                                 } );
+                                                scheduleAutosave();
 
                                         },
 
@@ -364,6 +513,7 @@ scenes.forEach( updateStats );
 
                                                 coneAngle = v;
                                                 updateGeometries();
+                                                scheduleAutosave();
 
                                         },
 
@@ -377,11 +527,11 @@ scenes.forEach( updateStats );
 
                                                 coneHeight = v;
                                                 updateGeometries();
+                                                scheduleAutosave();
 
                                         },
 
-
-get 'cutAngle'() {
+                                        get 'cutAngle'() {
 
                                                 return cutAngle;
 
@@ -390,11 +540,12 @@ get 'cutAngle'() {
                                         set 'cutAngle'( v ) {
 
                                                 cutAngle = v;
-                                                        updateGeometries();
+                                                updateGeometries();
+                                                scheduleAutosave();
 
-                                                },
+                                        },
 
-get 'cutUpOffset'() {
+                                        get 'cutUpOffset'() {
 
                                                 return localPlane1.constant;
 
@@ -402,12 +553,13 @@ get 'cutUpOffset'() {
 
                                         set 'cutUpOffset'( v ) {
 
-                                                        localPlane1.constant = v;
-                                                        updateGeometries();
+                                                localPlane1.constant = v;
+                                                updateGeometries();
+                                                scheduleAutosave();
 
-                                                },
+                                        },
 
-get 'cutDownOffset'() {
+                                        get 'cutDownOffset'() {
 
                                                 return localPlane2.constant;
 
@@ -415,37 +567,38 @@ get 'cutDownOffset'() {
 
                                         set 'cutDownOffset'( v ) {
 
-                                                        localPlane2.constant = v;
-                                                        updateGeometries();
-
-                                                }
-
-                                } ;
-
-                                folderConic.add( propsConic, 'Enabled' );
-                                folderConic.add( propsConic, 'ClipShadows' );
-                                folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
-                                folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
-                                folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
-                                folderConic.add( propsConic, 'cutUpOffset', -3, 3 );
-                                folderConic.add( propsConic, 'cutDownOffset', -3, 3 );
-
-function updatePlaneNormals() {
-
-const normal1 = new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ).normalize();
-                                const normal2 = new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ).normalize();
-
-                                                localPlane1.normal.copy( normal1 );
-                                                localPlane2.normal.copy( normal2 );
+                                                localPlane2.constant = v;
+                                                updateGeometries();
+                                                scheduleAutosave();
 
                                         }
 
-                                        function updateGeometries() {
+                                };
 
-                                                coneRadius = Math.tan( coneAngle ) * coneHeight;
-                                                updatePlaneNormals();
-                                                const newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
-                                                const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2 );
+                                conicEditors.Enabled = folderConic.add( propsConic, 'Enabled' );
+                                conicEditors.ClipShadows = folderConic.add( propsConic, 'ClipShadows' );
+                                conicEditors.coneAngle = folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
+                                conicEditors.coneHeight = folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
+                                conicEditors.cutAngle = folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
+                                conicEditors.cutUpOffset = folderConic.add( propsConic, 'cutUpOffset', - 3, 3 );
+                                conicEditors.cutDownOffset = folderConic.add( propsConic, 'cutDownOffset', - 3, 3 );
+
+                                function updatePlaneNormals() {
+
+                                        const normal1 = new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ).normalize();
+                                        const normal2 = new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ).normalize();
+
+                                        localPlane1.normal.copy( normal1 );
+                                        localPlane2.normal.copy( normal2 );
+
+                                }
+
+                                function updateGeometries() {
+
+                                        coneRadius = Math.tan( coneAngle ) * coneHeight;
+                                        updatePlaneNormals();
+                                        const newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                        const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2 );
 
                                         scenes.forEach( function ( scene ) {
 
@@ -453,7 +606,7 @@ const normal1 = new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0
 
                                                         scene.userData.coneMesh.geometry.dispose();
                                                         scene.userData.coneMesh.geometry = newConeGeometry;
-scene.userData.coneMesh.rotation.z = Math.PI;
+                                                        scene.userData.coneMesh.rotation.z = Math.PI;
 
                                                 }
 
@@ -469,6 +622,180 @@ scene.userData.coneMesh.rotation.z = Math.PI;
                                         scenes.forEach( updateStats );
 
                                 }
+
+                                function syncConicEditors() {
+
+                                        const params = getParams();
+
+                                        if ( conicEditors.Enabled ) conicEditors.Enabled.setValue( params.Enabled );
+                                        if ( conicEditors.ClipShadows ) conicEditors.ClipShadows.setValue( params.ClipShadows );
+                                        if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( params.coneAngle );
+                                        if ( conicEditors.coneHeight ) conicEditors.coneHeight.setValue( params.coneHeight );
+                                        if ( conicEditors.cutAngle ) conicEditors.cutAngle.setValue( params.cutAngle );
+                                        if ( conicEditors.cutUpOffset ) conicEditors.cutUpOffset.setValue( params.cutUpOffset );
+                                        if ( conicEditors.cutDownOffset ) conicEditors.cutDownOffset.setValue( params.cutDownOffset );
+
+                                }
+
+                                function applyParams( params ) {
+
+                                        if ( ! params ) return;
+
+                                        isRestoring = true;
+
+                                        try {
+
+                                                if ( 'Enabled' in params ) {
+
+                                                        knotClippingGroups.forEach( function ( group ) {
+
+                                                                group.enabled = params.Enabled;
+
+                                                        } );
+
+                                                }
+
+                                                if ( 'ClipShadows' in params ) {
+
+                                                        knotClippingGroups.forEach( function ( group ) {
+
+                                                                group.clipShadows = params.ClipShadows;
+
+                                                        } );
+
+                                                }
+
+                                                if ( 'coneAngle' in params ) coneAngle = params.coneAngle;
+                                                if ( 'coneHeight' in params ) coneHeight = params.coneHeight;
+                                                if ( 'cutAngle' in params ) cutAngle = params.cutAngle;
+                                                if ( 'cutUpOffset' in params ) localPlane1.constant = params.cutUpOffset;
+                                                if ( 'cutDownOffset' in params ) localPlane2.constant = params.cutDownOffset;
+
+                                                updateGeometries();
+                                                syncConicEditors();
+
+                                        } finally {
+
+                                                isRestoring = false;
+
+                                        }
+
+                                }
+
+                                store = loadStore();
+                                if ( store.autosave[ 0 ] ) applyParams( store.autosave[ 0 ].params );
+
+                                const folderPersist = gui.addFolder( 'Persistence' );
+                                const propsPersist = {
+                                        name: '',
+                                        load: EMPTY_SELECT,
+                                        version: EMPTY_SELECT,
+                                        autosave: EMPTY_SELECT,
+                                        Save() {
+
+                                                const name = propsPersist.name.trim();
+                                                if ( ! name ) return;
+
+                                                if ( ! store.named[ name ] ) {
+
+                                                        store.named[ name ] = { versions: [] };
+
+                                                }
+
+                                                pushVersion( store.named[ name ].versions, { t: Date.now(), params: getParams() } );
+                                                saveStore();
+                                                propsPersist.load = name;
+                                                refreshPersistenceUI();
+
+                                        },
+                                        Load() {
+
+                                                const name = propsPersist.load;
+                                                if ( ! name || name === EMPTY_SELECT || ! store.named[ name ] ) return;
+
+                                                const versions = store.named[ name ].versions;
+                                                const index = Math.max( 0, parseSnapshotIndex( propsPersist.version ) );
+                                                if ( ! versions[ index ] ) return;
+
+                                                applyParams( versions[ index ].params );
+
+                                        },
+                                        Delete() {
+
+                                                const name = propsPersist.load;
+                                                if ( ! name || name === EMPTY_SELECT || ! store.named[ name ] ) return;
+
+                                                delete store.named[ name ];
+                                                saveStore();
+                                                propsPersist.load = EMPTY_SELECT;
+                                                propsPersist.version = EMPTY_SELECT;
+                                                refreshPersistenceUI();
+
+                                        },
+                                        'Apply autosave'() {
+
+                                                const index = parseSnapshotIndex( propsPersist.autosave );
+                                                if ( index < 0 || ! store.autosave[ index ] ) return;
+
+                                                applyParams( store.autosave[ index ].params );
+
+                                        }
+                                };
+
+                                persistEditors.name = folderPersist.add( propsPersist, 'name' );
+                                persistEditors.Save = folderPersist.add( propsPersist, 'Save' );
+                                persistEditors.load = folderPersist.add( propsPersist, 'load', [ EMPTY_SELECT ] );
+                                persistEditors.version = folderPersist.add( propsPersist, 'version', [ EMPTY_SELECT ] );
+                                persistEditors.Load = folderPersist.add( propsPersist, 'Load' );
+                                persistEditors.Delete = folderPersist.add( propsPersist, 'Delete' );
+                                persistEditors.autosave = folderPersist.add( propsPersist, 'autosave', [ EMPTY_SELECT ] );
+                                persistEditors.applyAutosave = folderPersist.add( propsPersist, 'Apply autosave' );
+
+                                persistEditors.load.onChange( function () {
+
+                                        refreshVersionSelect();
+
+                                } );
+
+                                function refreshVersionSelect() {
+
+                                        const name = propsPersist.load;
+                                        const versions = ( name && name !== EMPTY_SELECT && store.named[ name ] )
+                                                ? store.named[ name ].versions
+                                                : [];
+                                        const options = versions.length
+                                                ? versions.map( formatSnapshotLabel )
+                                                : [ EMPTY_SELECT ];
+                                        const selected = options.includes( propsPersist.version ) ? propsPersist.version : options[ 0 ];
+                                        propsPersist.version = selected;
+                                        replaceSelectOptions( persistEditors.version, options, selected );
+
+                                }
+
+                                function refreshPersistenceUI() {
+
+                                        if ( ! persistEditors.load ) return;
+
+                                        const names = Object.keys( store.named ).sort();
+                                        const loadOptions = names.length ? [ EMPTY_SELECT ].concat( names ) : [ EMPTY_SELECT ];
+                                        const selectedLoad = loadOptions.includes( propsPersist.load ) ? propsPersist.load : EMPTY_SELECT;
+                                        propsPersist.load = selectedLoad;
+                                        replaceSelectOptions( persistEditors.load, loadOptions, selectedLoad );
+
+                                        refreshVersionSelect();
+
+                                        const autosaveOptions = store.autosave.length
+                                                ? store.autosave.map( formatSnapshotLabel )
+                                                : [ EMPTY_SELECT ];
+                                        const selectedAutosave = autosaveOptions.includes( propsPersist.autosave )
+                                                ? propsPersist.autosave
+                                                : autosaveOptions[ 0 ];
+                                        propsPersist.autosave = selectedAutosave;
+                                        replaceSelectOptions( persistEditors.autosave, autosaveOptions, selectedAutosave );
+
+                                }
+
+                                refreshPersistenceUI();
 
                                 function computeBoundingBoxSizes( geometry ) {
 
