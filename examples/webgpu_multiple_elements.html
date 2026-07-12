@@ -118,7 +118,7 @@
                 <div id="content">
                         <div id="info">
                                 <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics
-                                <div class="controls-hint">Drag to rotate · right-click drag to move · scroll to zoom</div>
+                                <div class="controls-hint">Drag to rotate · right-click drag to move · scroll to zoom · Autosave keeps the last 20 param changes · Save with a name to store a named history · Load a name and version to restore</div>
                         </div>
                 </div>
 
@@ -136,15 +136,146 @@
                 <script type="module">
 
 import * as THREE from 'three/webgpu';
-                                import { color } from 'three/tsl';
+                                import {
+                                        color, div, float, Fn, mx_fractal_noise_float, mx_noise_float, mx_worley_noise_float,
+                                        normalView, positionLocal, positionView, positionViewDirection, refract,
+                                        smoothstep, texture, uniform, vec2, vec3
+                                } from 'three/tsl';
                                 import { Inspector } from 'three/addons/inspector/Inspector.js';
                                 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
                         let canvas, renderer;
+                        let renderRequested = false;
 
                         const scenes = [];
 
                         init();
+
+                        function requestRender() {
+
+                                if ( renderRequested ) return;
+
+                                renderRequested = true;
+                                requestAnimationFrame( function () {
+
+                                        renderRequested = false;
+                                        if ( renderer ) animate();
+
+                                } );
+
+                        }
+
+                        // Procedural height → normals via screen-space derivatives.
+                        // bumpMap only works with UV-sampled textures, not position-based noise.
+                        function bumpNormal( height ) {
+
+                                const dpdx = positionView.dFdx();
+                                const dpdy = positionView.dFdy();
+                                const r1 = dpdy.cross( normalView );
+                                const r2 = normalView.cross( dpdx );
+                                const det = dpdx.dot( r1 );
+                                const grad = det.sign().mul( height.dFdx().mul( r1 ).add( height.dFdy().mul( r2 ) ) );
+
+                                return det.abs().mul( normalView ).sub( grad ).normalize();
+
+                        }
+
+                        function createClayMaterial() {
+
+                                const material = new THREE.MeshStandardNodeMaterial( {
+
+                                        side: THREE.DoubleSide,
+                                        alphaToCoverage: true,
+                                        metalness: 0,
+                                        roughness: 0.97
+
+                                } );
+
+                                // Hand-worked clay: soft Worley thumbprints + multi-scale Perlin kneading + fine tooth
+                                const p = positionLocal;
+                                const pits = mx_worley_noise_float( p.mul( 1.7 ) ).mul( 0.6 )
+                                        .add( mx_worley_noise_float( p.mul( 2.9 ).add( 13.7 ) ).mul( 0.4 ) );
+                                const softPits = smoothstep( 0.06, 0.5, pits );
+
+                                const knead = mx_fractal_noise_float( p.mul( 0.7 ), 4 ).mul( 0.45 )
+                                        .add( mx_noise_float( p.mul( 2.4 ) ).mul( 0.3 ) )
+                                        .add( mx_noise_float( p.mul( 6.5 ) ).mul( 0.25 ) );
+                                const waves = knead.mul( 0.5 ).add( 0.5 );
+
+                                const grain = mx_noise_float( p.mul( 48 ) );
+
+                                const height = softPits.mul( 0.45 ).add( waves.mul( 0.5 ) ).add( grain.mul( 0.05 ) );
+
+                                material.colorNode = color( 0xb8957e );
+                                material.roughnessNode = float( 0.95 ).add( grain.mul( 0.04 ) );
+                                material.normalNode = bumpNormal( height.mul( 0.08 ) );
+
+                                return material;
+
+                        }
+
+                        function createGlassMaterial() {
+
+                                const causticMap = new THREE.TextureLoader().load( './textures/opengameart/Caustic_Free.jpg' );
+                                causticMap.wrapS = causticMap.wrapT = THREE.RepeatWrapping;
+                                causticMap.colorSpace = THREE.SRGBColorSpace;
+
+                                const material = new THREE.MeshPhysicalNodeMaterial();
+                                material.side = THREE.DoubleSide;
+                                material.transparent = true;
+                                material.opacity = 0.6;
+                                material.color = new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
+                                // transmission uses a fullscreen buffer that breaks under multi-viewport scissor rendering
+                                material.transmission = 0;
+                                material.thickness = 0.25;
+                                material.ior = 1.5;
+                                material.metalness = 0;
+                                material.roughness = 0.08;
+                                material.specularIntensity = 1;
+
+                                const causticOcclusion = uniform( 20 );
+                                const causticColor = uniform( material.color );
+
+                                material.castShadowPositionNode = Fn( () => {
+
+                                        return positionLocal;
+
+                                } )();
+
+                                material.castShadowNode = Fn( () => {
+
+                                        const refractionVector = refract( positionViewDirection.negate(), normalView, div( 1.0, material.ior ) ).normalize();
+                                        const viewZ = normalView.z.pow( causticOcclusion );
+                                        const textureUV = refractionVector.xy.mul( 0.6 );
+                                        const chromaticAberrationOffset = normalView.z.pow( - 0.9 ).mul( 0.004 );
+
+                                        const causticProjection = vec3(
+                                                texture( causticMap, textureUV.add( vec2( chromaticAberrationOffset.negate(), 0 ) ) ).r,
+                                                texture( causticMap, textureUV.add( vec2( 0, chromaticAberrationOffset.negate() ) ) ).g,
+                                                texture( causticMap, textureUV.add( vec2( chromaticAberrationOffset, chromaticAberrationOffset ) ) ).b
+                                        );
+
+                                        return causticProjection.mul( viewZ.mul( 25 ) ).add( viewZ ).mul( causticColor );
+
+                                } )();
+
+                                return material;
+
+                        }
+
+                        function createPlainMaterial() {
+
+                                return new THREE.MeshStandardNodeMaterial( {
+
+                                        color: new THREE.Color().setHSL( Math.random(), 0.75, 0.55 ),
+                                        side: THREE.DoubleSide,
+                                        alphaToCoverage: true,
+                                        metalness: 0,
+                                        roughness: 0.45
+
+                                } );
+
+                        }
 
                         function init() {
 
@@ -160,6 +291,8 @@ import * as THREE from 'three/webgpu';
                                 let cutAngle = 0.0;
                                 let showGroundPlane = true;
                                 let autoZoom = false;
+                                let wallMaterial = 'clay';
+                                const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
                                 const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), 2.0 );
                                 const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), 2.0 );
                                 const _fitPoint = new THREE.Vector3();
@@ -169,6 +302,11 @@ import * as THREE from 'three/webgpu';
                                 const objectMaterials = [];
                                 const groundMaterials = [];
                                 const knotClippingGroups = [];
+                                const wallMaterials = {
+                                        clay: createClayMaterial(),
+                                        glass: createGlassMaterial(),
+                                        plain: createPlainMaterial()
+                                };
 
                                 const content = document.getElementById( 'content' );
 
@@ -210,17 +348,10 @@ import * as THREE from 'three/webgpu';
                                         controls.maxDistance = 155;
                                         controls.enablePan = true;
                                         controls.enableZoom = true;
+                                        controls.addEventListener( 'change', requestRender );
                                         scene.userData.controls = controls;
 
-                                        const material = new THREE.MeshPhongNodeMaterial( {
-
-                                                color: new THREE.Color().setHSL( Math.random(), 1, 0.75, THREE.SRGBColorSpace ),
-                                                shininess: 0,
-                                                side: THREE.DoubleSide,
-                                                alphaToCoverage: true
-
-                                        } );
-
+                                        const material = wallMaterials.clay;
                                         objectMaterials.push( material );
 
                                         let object;
@@ -234,7 +365,7 @@ import * as THREE from 'three/webgpu';
 
                                                 scene.add( knotClippingGroup );
 
-                                                object = new THREE.Mesh( coneGeometry, material );
+                                                object = new THREE.Mesh( coneGeometry, wallMaterials.clay );
                                                 object.castShadow = true;
 
                                                 object.rotation.z = Math.PI;
@@ -252,7 +383,7 @@ import * as THREE from 'three/webgpu';
                                         } else {
 
                                                 const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, knotClippingGroups[ 0 ].enabled );
-                                                object = new THREE.Mesh( flattenedGeometry, material );
+                                                object = new THREE.Mesh( flattenedGeometry, wallMaterials.clay );
                                                 object.castShadow = true;
                                                 object.rotation.z = Math.PI;
                                                 object.position.y = -4.9;
@@ -301,13 +432,14 @@ import * as THREE from 'three/webgpu';
                                         scene.userData.grid = grid;
                                         groundMaterials.push( ground.material );
 
-                                        scene.add( new THREE.AmbientLight( 0xcccccc ) );
+                                        scene.add( new THREE.AmbientLight( 0xcccccc, 0.7 ) );
 
                                         const spotLight = new THREE.SpotLight( 0xffffff, 60 );
                                         spotLight.angle = Math.PI / 5;
                                         spotLight.penumbra = 0.2;
                                         spotLight.position.set( 0, -2, 0 );
                                         spotLight.castShadow = true;
+                                        spotLight.shadow.mapType = THREE.HalfFloatType; // HDR caustics through transparent walls
                                         spotLight.shadow.camera.near = 1;
                                         spotLight.shadow.camera.far = 20;
                                         spotLight.shadow.mapSize.width = 2048;
@@ -315,9 +447,10 @@ import * as THREE from 'three/webgpu';
                                         spotLight.shadow.radius = 4;
                                         scene.add( spotLight );
 
-                                        const dirLight = new THREE.DirectionalLight( 0x55505a, 3 );
-                                        dirLight.position.set( 0, 10, 0 );
+                                        const dirLight = new THREE.DirectionalLight( 0xffffff, 2.5 );
+                                        dirLight.position.set( 4, 8, 5 );
                                         dirLight.castShadow = true;
+                                        dirLight.shadow.mapType = THREE.HalfFloatType;
                                         dirLight.shadow.camera.near = 1;
                                         dirLight.shadow.camera.far = 20;
 
@@ -332,22 +465,56 @@ import * as THREE from 'three/webgpu';
 
                                         const lightAbove = new THREE.PointLight( 0xffffff, 50, 50 );
                                         lightAbove.position.set( 3, 10, 4 );
+                                        lightAbove.castShadow = true;
+                                        lightAbove.shadow.mapType = THREE.HalfFloatType;
+                                        lightAbove.shadow.mapSize.width = 1024;
+                                        lightAbove.shadow.mapSize.height = 1024;
+                                        lightAbove.shadow.camera.near = 0.5;
+                                        lightAbove.shadow.camera.far = 50;
                                         scene.add( lightAbove );
 
                                         const lightAboveFill = new THREE.PointLight( 0xfff2e0, 30, 50 );
                                         lightAboveFill.position.set( - 4, 8, - 3 );
+                                        lightAboveFill.castShadow = true;
+                                        lightAboveFill.shadow.mapType = THREE.HalfFloatType;
+                                        lightAboveFill.shadow.mapSize.width = 512;
+                                        lightAboveFill.shadow.mapSize.height = 512;
+                                        lightAboveFill.shadow.camera.near = 0.5;
+                                        lightAboveFill.shadow.camera.far = 50;
                                         scene.add( lightAboveFill );
 
                                         const lightBelow = new THREE.PointLight( 0xffffff, 40, 50 );
                                         lightBelow.position.set( - 2, - 8, 3 );
+                                        lightBelow.castShadow = true;
+                                        lightBelow.shadow.mapType = THREE.HalfFloatType;
+                                        lightBelow.shadow.mapSize.width = 1024;
+                                        lightBelow.shadow.mapSize.height = 1024;
+                                        lightBelow.shadow.camera.near = 0.5;
+                                        lightBelow.shadow.camera.far = 50;
                                         scene.add( lightBelow );
 
                                         const lightBelowFill = new THREE.PointLight( 0xe0f0ff, 25, 50 );
                                         lightBelowFill.position.set( 4, - 6, - 4 );
+                                        lightBelowFill.castShadow = true;
+                                        lightBelowFill.shadow.mapType = THREE.HalfFloatType;
+                                        lightBelowFill.shadow.mapSize.width = 512;
+                                        lightBelowFill.shadow.mapSize.height = 512;
+                                        lightBelowFill.shadow.camera.near = 0.5;
+                                        lightBelowFill.shadow.camera.far = 50;
                                         scene.add( lightBelowFill );
 
                                         const dirLightBelow = new THREE.DirectionalLight( 0x888888, 1.5 );
                                         dirLightBelow.position.set( 0, - 10, 2 );
+                                        dirLightBelow.castShadow = true;
+                                        dirLightBelow.shadow.mapType = THREE.HalfFloatType;
+                                        dirLightBelow.shadow.camera.near = 1;
+                                        dirLightBelow.shadow.camera.far = 20;
+                                        dirLightBelow.shadow.camera.right = 5;
+                                        dirLightBelow.shadow.camera.left = - 5;
+                                        dirLightBelow.shadow.camera.top = 5;
+                                        dirLightBelow.shadow.camera.bottom = - 5;
+                                        dirLightBelow.shadow.mapSize.width = 1024;
+                                        dirLightBelow.shadow.mapSize.height = 1024;
                                         scene.add( dirLightBelow );
 
                                         scenes.push( scene );
@@ -359,8 +526,12 @@ import * as THREE from 'three/webgpu';
                                 renderer.shadowMap.enabled = true;
                                 renderer.setClearColor( 0xffffff, 1 );
                                 renderer.setPixelRatio( window.devicePixelRatio );
-                                renderer.setAnimationLoop( animate );
                                 renderer.inspector = new Inspector();
+
+                                window.addEventListener( 'resize', requestRender );
+                                window.addEventListener( 'scroll', requestRender, { passive: true } );
+                                requestRender();
+
 scenes.forEach( updateStats );
                                 const gui = renderer.inspector.createParameters( 'Clipping settings' );
                                 const props = {
@@ -438,6 +609,7 @@ scenes.forEach( updateStats );
                                                 a.ClipShadows === b.ClipShadows &&
                                                 a.showGroundPlane === b.showGroundPlane &&
                                                 a.autoZoom === b.autoZoom &&
+                                                a.wallMaterial === b.wallMaterial &&
                                                 a.coneAngle === b.coneAngle &&
                                                 a.coneHeight === b.coneHeight &&
                                                 a.cutAngle === b.cutAngle &&
@@ -453,6 +625,7 @@ scenes.forEach( updateStats );
                                                 ClipShadows: knotClippingGroups[ 0 ].clipShadows,
                                                 showGroundPlane: showGroundPlane,
                                                 autoZoom: autoZoom,
+                                                wallMaterial: wallMaterial,
                                                 coneAngle: coneAngle,
                                                 coneHeight: coneHeight,
                                                 cutAngle: cutAngle,
@@ -530,6 +703,8 @@ scenes.forEach( updateStats );
                                 }
 
                                 const folderConic = gui.addFolder( 'Conic Sections' );
+                                const folderScene = gui.addFolder( 'Scene' );
+                                const folderMaterial = gui.addFolder( 'Material' );
                                 const propsConic = {
 
                                         get applyCuts() {
@@ -591,6 +766,21 @@ scenes.forEach( updateStats );
 
                                                 autoZoom = v;
                                                 if ( autoZoom ) ensureConeFitsInView();
+                                                scheduleAutosave();
+
+                                        },
+
+                                        get wallMaterial() {
+
+                                                return wallMaterial;
+
+                                        },
+
+                                        set wallMaterial( v ) {
+
+                                                const next = v === 'duck' ? 'glass' : v;
+                                                wallMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
+                                                updateConeWallMaterial();
                                                 scheduleAutosave();
 
                                         },
@@ -670,14 +860,17 @@ scenes.forEach( updateStats );
                                 };
 
                                 conicEditors.applyCuts = folderConic.add( propsConic, 'applyCuts' );
-                                conicEditors.ClipShadows = folderConic.add( propsConic, 'ClipShadows' );
-                                conicEditors.showGroundPlane = folderConic.add( propsConic, 'showGroundPlane' );
-                                conicEditors.autoZoom = folderConic.add( propsConic, 'autoZoom' );
                                 conicEditors.coneAngle = folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
                                 conicEditors.coneHeight = folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
                                 conicEditors.cutAngle = folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
                                 conicEditors.cutUpOffset = folderConic.add( propsConic, 'cutUpOffset', - 3, 3 );
                                 conicEditors.cutDownOffset = folderConic.add( propsConic, 'cutDownOffset', - 3, 3 );
+
+                                conicEditors.ClipShadows = folderScene.add( propsConic, 'ClipShadows' );
+                                conicEditors.showGroundPlane = folderScene.add( propsConic, 'showGroundPlane' );
+                                conicEditors.autoZoom = folderScene.add( propsConic, 'autoZoom' );
+
+                                conicEditors.wallMaterial = folderMaterial.add( propsConic, 'wallMaterial', WALL_MATERIALS );
 
                                 function updatePlaneNormals() {
 
@@ -697,6 +890,21 @@ scenes.forEach( updateStats );
                                                 if ( scene.userData.grid ) scene.userData.grid.visible = showGroundPlane;
 
                                         } );
+                                        requestRender();
+
+                                }
+
+                                function updateConeWallMaterial() {
+
+                                        const material = wallMaterials[ wallMaterial ] || wallMaterials.clay;
+
+                                        scenes.forEach( function ( scene ) {
+
+                                                if ( scene.userData.coneMesh ) scene.userData.coneMesh.material = material;
+                                                if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = material;
+
+                                        } );
+                                        requestRender();
 
                                 }
 
@@ -756,6 +964,7 @@ scenes.forEach( updateStats );
                                                 }
 
                                                 controls.update();
+                                                requestRender();
                                                 return;
 
                                         }
@@ -789,6 +998,7 @@ scenes.forEach( updateStats );
                                         } );
 
                                         scenes.forEach( updateStats );
+                                        requestRender();
 
                                 }
 
@@ -800,6 +1010,7 @@ scenes.forEach( updateStats );
                                         if ( conicEditors.ClipShadows ) conicEditors.ClipShadows.setValue( params.ClipShadows );
                                         if ( conicEditors.showGroundPlane ) conicEditors.showGroundPlane.setValue( params.showGroundPlane );
                                         if ( conicEditors.autoZoom ) conicEditors.autoZoom.setValue( params.autoZoom );
+                                        if ( conicEditors.wallMaterial ) conicEditors.wallMaterial.setValue( params.wallMaterial );
                                         if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( params.coneAngle );
                                         if ( conicEditors.coneHeight ) conicEditors.coneHeight.setValue( params.coneHeight );
                                         if ( conicEditors.cutAngle ) conicEditors.cutAngle.setValue( params.cutAngle );
@@ -846,6 +1057,14 @@ scenes.forEach( updateStats );
                                                 }
 
                                                 if ( 'autoZoom' in params ) autoZoom = params.autoZoom;
+
+                                                if ( 'wallMaterial' in params ) {
+
+                                                        const next = params.wallMaterial === 'duck' ? 'glass' : params.wallMaterial;
+                                                        wallMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
+                                                        updateConeWallMaterial();
+
+                                                }
 
                                                 const sizeChanged = ( 'coneAngle' in params && params.coneAngle !== coneAngle )
                                                         || ( 'coneHeight' in params && params.coneHeight !== coneHeight );
@@ -929,9 +1148,9 @@ scenes.forEach( updateStats );
                                         }
                                 };
 
-                                persistEditors.name = folderPersist.add( propsPersist, 'name' );
+                                persistEditors.name = folderPersist.add( propsPersist, 'name' ).name( 'name of save' );
                                 persistEditors.Save = folderPersist.add( propsPersist, 'Save' );
-                                persistEditors.load = folderPersist.add( propsPersist, 'load', [ EMPTY_SELECT, AUTOSAVE_LABEL ] );
+                                persistEditors.load = folderPersist.add( propsPersist, 'load', [ EMPTY_SELECT, AUTOSAVE_LABEL ] ).name( 'load save' );
                                 persistEditors.version = folderPersist.add( propsPersist, 'version', [ EMPTY_SELECT ] );
                                 persistEditors.Load = folderPersist.add( propsPersist, 'Load' );
                                 persistEditors.Delete = folderPersist.add( propsPersist, 'Delete' );
