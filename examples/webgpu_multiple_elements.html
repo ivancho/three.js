@@ -575,7 +575,8 @@ import * as THREE from 'three/webgpu';
                                 const _levelTarget = new THREE.Vector3();
                                 const _levelUp = new THREE.Vector3( 0, 1, 0 );
                                 const _levelQuat = new THREE.Quaternion();
-                                const AUTO_ZOOM_FILL = 0.9; // leave a 10% margin; only zoom out past this
+                                const AUTO_ZOOM_TRIGGER = 1.08; // only zoom out once clearly past the view edge
+                                const AUTO_ZOOM_FILL = 0.98; // settle near the edges — avoid jumping far back
                                 const APEX_EPS = 1e-10;
                                 const titles = [ '3D Cone Sliced', 'Unrolled Pattern' ];
                                 const objectMaterials = [];
@@ -2997,7 +2998,7 @@ scenes.forEach( updateStats );
 
                                 }
 
-                                function getMeshProjectedExtent( mesh, camera ) {
+                                function getMeshProjectedExtent( mesh, camera, options = {} ) {
 
                                         const position = mesh.geometry.getAttribute( 'position' );
                                         if ( ! position || position.count === 0 ) return 0;
@@ -3005,16 +3006,25 @@ scenes.forEach( updateStats );
                                         mesh.updateWorldMatrix( true, false );
                                         camera.updateMatrixWorld();
 
+                                        const clipVisible = !! options.clipVisible;
+                                        if ( clipVisible ) syncClippingPlanesToWorld();
+
                                         let maxExtent = 0;
+                                        let counted = 0;
 
                                         for ( let i = 0; i < position.count; i ++ ) {
 
-                                                _fitPoint.fromBufferAttribute( position, i ).applyMatrix4( mesh.matrixWorld ).project( camera );
+                                                _fitPoint.fromBufferAttribute( position, i ).applyMatrix4( mesh.matrixWorld );
+
+                                                if ( clipVisible && ! isPointOnVisibleCone( _fitPoint ) ) continue;
+
+                                                _fitPoint.project( camera );
                                                 maxExtent = Math.max( maxExtent, Math.abs( _fitPoint.x ), Math.abs( _fitPoint.y ) );
+                                                counted ++;
 
                                         }
 
-                                        return maxExtent;
+                                        return counted > 0 ? maxExtent : 0;
 
                                 }
 
@@ -3026,21 +3036,22 @@ scenes.forEach( updateStats );
                                         const controls = scene.userData.controls;
                                         if ( ! camera || ! controls ) return;
 
-                                        const maxExtent = getMeshProjectedExtent( mesh, camera );
-                                        if ( ! Number.isFinite( maxExtent ) || maxExtent <= AUTO_ZOOM_FILL ) return;
+                                        const clipVisible = mesh === scene.userData.coneMesh;
+                                        const maxExtent = getMeshProjectedExtent( mesh, camera, { clipVisible: clipVisible } );
+                                        if ( ! Number.isFinite( maxExtent ) || maxExtent <= AUTO_ZOOM_TRIGGER ) return;
 
                                         const currentDistance = camera.position.distanceTo( controls.target );
                                         if ( currentDistance <= 0 ) return;
 
                                         _fitDir.copy( camera.position ).sub( controls.target ).normalize();
 
-                                        // One corrective step using true mesh extent (not the AABB), then re-check once
+                                        // One gentle corrective step: pull back only enough to near the frame edge.
                                         let distance = Math.min( currentDistance * ( maxExtent / AUTO_ZOOM_FILL ), controls.maxDistance );
                                         camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
                                         camera.updateMatrixWorld();
 
-                                        const extentAfter = getMeshProjectedExtent( mesh, camera );
-                                        if ( Number.isFinite( extentAfter ) && extentAfter > AUTO_ZOOM_FILL && distance < controls.maxDistance ) {
+                                        const extentAfter = getMeshProjectedExtent( mesh, camera, { clipVisible: clipVisible } );
+                                        if ( Number.isFinite( extentAfter ) && extentAfter > AUTO_ZOOM_TRIGGER && distance < controls.maxDistance ) {
 
                                                 distance = Math.min( distance * ( extentAfter / AUTO_ZOOM_FILL ), controls.maxDistance );
                                                 camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
