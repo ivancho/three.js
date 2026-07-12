@@ -341,6 +341,8 @@ import * as THREE from 'three/webgpu';
                         let canvas, renderer;
                         let renderRequested = false;
                         let rendererReady = false;
+                        let panelBlitTextureNode = null;
+                        let panelBlitQuad = null;
 
                         const scenes = [];
 
@@ -381,12 +383,15 @@ import * as THREE from 'three/webgpu';
 
                         function createClayMaterial() {
 
-                                const material = new THREE.MeshStandardNodeMaterial( {
+                                const material = new THREE.MeshPhysicalNodeMaterial( {
 
                                         side: THREE.DoubleSide,
                                         alphaToCoverage: true,
                                         metalness: 0,
-                                        roughness: 0.97
+                                        roughness: 0.97,
+                                        transmission: 0,
+                                        thickness: 0.25,
+                                        ior: 1.5
 
                                 } );
 
@@ -422,10 +427,10 @@ import * as THREE from 'three/webgpu';
                                 const material = new THREE.MeshPhysicalNodeMaterial();
                                 material.side = THREE.DoubleSide;
                                 material.transparent = true;
-                                material.opacity = 0.6;
+                                material.opacity = 1;
                                 material.color = new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
-                                // transmission uses a fullscreen buffer that breaks under multi-viewport scissor rendering
-                                material.transmission = 0;
+                                // Panels render to full-view RTs so transmission samples the correct framebuffer.
+                                material.transmission = 1;
                                 material.thickness = 0.25;
                                 material.ior = 1.5;
                                 material.metalness = 0;
@@ -464,13 +469,16 @@ import * as THREE from 'three/webgpu';
 
                         function createPlainMaterial() {
 
-                                return new THREE.MeshStandardNodeMaterial( {
+                                return new THREE.MeshPhysicalNodeMaterial( {
 
                                         color: new THREE.Color().setHSL( Math.random(), 0.75, 0.55 ),
                                         side: THREE.DoubleSide,
                                         alphaToCoverage: true,
                                         metalness: 0,
-                                        roughness: 0.45
+                                        roughness: 0.45,
+                                        transmission: 0,
+                                        thickness: 0.25,
+                                        ior: 1.5
 
                                 } );
 
@@ -480,10 +488,15 @@ import * as THREE from 'three/webgpu';
 
                                 canvas = document.getElementById( 'c' );
 
+                                const BASE_CONE_HEIGHT = 5;
                                 let coneAngle = 0.4;
-                                let coneHeight = 5;
+                                let coneScale = 1;
+                                let coneHeight = BASE_CONE_HEIGHT * coneScale;
                                 const coneSegments = 64;
                                 let coneRadius = Math.tan( coneAngle ) * coneHeight;
+                                // Cut offsets as signed % of cone height along the cut axis (interval endpoints).
+                                let cutUpOffsetPct = - 40;
+                                let cutDownOffsetPct = 40;
 
                                 let coneGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
 
@@ -494,10 +507,65 @@ import * as THREE from 'three/webgpu';
                                 let coneUsesParametricGeometry = true;
                                 let wallMaterial = 'clay';
                                 const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
+                                let wallThickness = 0.25;
                                 let lastInverseDiagnostics = null;
                                 // Canonical cut definition in cone-rig space. Flattening always uses these.
-                                const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), 2.0 );
-                                const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), 2.0 );
+                                // cutUp/cutDown are interval endpoints: plane constants use −cutUp and +cutDown.
+                                const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), ( - cutUpOffsetPct / 100 ) * coneHeight );
+                                const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), ( cutDownOffsetPct / 100 ) * coneHeight );
+
+                                function syncCutPlaneConstants() {
+
+                                        localPlane1.constant = ( - cutUpOffsetPct / 100 ) * coneHeight;
+                                        localPlane2.constant = ( cutDownOffsetPct / 100 ) * coneHeight;
+
+                                }
+
+                                function setConeScale( next ) {
+
+                                        coneScale = next;
+                                        coneHeight = BASE_CONE_HEIGHT * coneScale;
+                                        syncCutPlaneConstants();
+
+                                }
+
+                                function getCutPlaneLocalAnchor( plane, target ) {
+
+                                        return target.copy( plane.normal ).multiplyScalar( - plane.constant );
+
+                                }
+
+                                // Keep the closer cut plane's height above the ground fixed while scaling.
+                                function preserveCloserCutGroundClearance( applyScale ) {
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group ) {
+
+                                                applyScale();
+                                                return;
+
+                                        }
+
+                                        group.updateMatrixWorld( true );
+                                        getCutPlaneLocalAnchor( localPlane1, _fitPoint );
+                                        _fitPoint.applyMatrix4( group.matrixWorld );
+                                        const y1 = _fitPoint.y;
+                                        getCutPlaneLocalAnchor( localPlane2, _fitPoint );
+                                        _fitPoint.applyMatrix4( group.matrixWorld );
+                                        const y2 = _fitPoint.y;
+                                        const closerIsPlane1 = y1 <= y2;
+                                        const prevY = closerIsPlane1 ? y1 : y2;
+
+                                        applyScale();
+
+                                        group.updateMatrixWorld( true );
+                                        getCutPlaneLocalAnchor( closerIsPlane1 ? localPlane1 : localPlane2, _fitPoint );
+                                        _fitPoint.applyMatrix4( group.matrixWorld );
+                                        group.position.y += prevY - _fitPoint.y;
+                                        group.updateMatrixWorld( true );
+                                        syncClippingPlanesToWorld();
+
+                                }
                                 // World-space copies for ClippingGroup rendering (updated when the rig moves/rotates).
                                 const worldPlane1 = localPlane1.clone();
                                 const worldPlane2 = localPlane2.clone();
@@ -845,12 +913,20 @@ import * as THREE from 'three/webgpu';
 
                                 renderer = new THREE.WebGPURenderer( { canvas: canvas, antialias: true } );
                                 renderer.shadowMap.enabled = true;
+                                renderer.shadowMap.transmitted = true;
                                 renderer.setClearColor( 0xffffff, 1 );
                                 renderer.setPixelRatio( window.devicePixelRatio );
                                 renderer.inspector = new Inspector();
 
                                 await renderer.init();
                                 rendererReady = true;
+
+                                panelBlitTextureNode = texture( new THREE.Texture() );
+                                const panelBlitMaterial = new THREE.MeshBasicNodeMaterial();
+                                panelBlitMaterial.colorNode = panelBlitTextureNode;
+                                panelBlitMaterial.depthTest = false;
+                                panelBlitMaterial.depthWrite = false;
+                                panelBlitQuad = new THREE.QuadMesh( panelBlitMaterial );
 
                                 window.addEventListener( 'resize', requestRender );
                                 window.addEventListener( 'scroll', requestRender, { passive: true } );
@@ -1560,8 +1636,9 @@ scenes.forEach( updateStats );
                                                 a.patternFirst === b.patternFirst &&
                                                 a.coneUsesParametricGeometry === b.coneUsesParametricGeometry &&
                                                 a.wallMaterial === b.wallMaterial &&
+                                                a.thickness === b.thickness &&
                                                 a.coneAngle === b.coneAngle &&
-                                                a.coneHeight === b.coneHeight &&
+                                                a.scale === b.scale &&
                                                 a.cutAngle === b.cutAngle &&
                                                 a.cutUpOffset === b.cutUpOffset &&
                                                 a.cutDownOffset === b.cutDownOffset &&
@@ -1932,11 +2009,13 @@ scenes.forEach( updateStats );
                                                 patternFirst: isConicV2Enabled() ? patternFirst : false,
                                                 coneUsesParametricGeometry: isConicV2Enabled() ? coneUsesParametricGeometry : true,
                                                 wallMaterial: wallMaterial,
+                                                thickness: wallThickness,
                                                 coneAngle: coneAngle,
-                                                coneHeight: coneHeight,
+                                                scale: coneScale,
                                                 cutAngle: cutAngle,
-                                                cutUpOffset: localPlane1.constant,
-                                                cutDownOffset: localPlane2.constant
+                                                cutUpOffset: cutUpOffsetPct,
+                                                cutDownOffset: cutDownOffsetPct,
+                                                cutOffsetsInterval: true
                                         };
 
                                         if ( isConicV2Enabled() && ! coneUsesParametricGeometry ) {
@@ -2363,6 +2442,21 @@ scenes.forEach( updateStats );
 
                                         },
 
+                                        get thickness() {
+
+                                                return wallThickness;
+
+                                        },
+
+                                        set thickness( v ) {
+
+                                                wallThickness = v;
+                                                applyWallThickness();
+                                                if ( isRestoring ) return;
+                                                scheduleAutosave();
+
+                                        },
+
                                         get 'coneAngle'() {
 
                                                 return coneAngle;
@@ -2379,16 +2473,26 @@ scenes.forEach( updateStats );
 
                                         },
 
-                                        get 'coneHeight'() {
+                                        get 'scale'() {
 
-                                                return coneHeight;
+                                                return coneScale;
 
                                         },
 
-                                        set 'coneHeight'( v ) {
+                                        set 'scale'( v ) {
 
-                                                coneHeight = v;
-                                                if ( isRestoring ) return;
+                                                if ( isRestoring ) {
+
+                                                        setConeScale( v );
+                                                        return;
+
+                                                }
+
+                                                preserveCloserCutGroundClearance( function () {
+
+                                                        setConeScale( v );
+
+                                                } );
                                                 updateGeometries( patternFirst ? {} : { editCone: true } );
                                                 ensureConeFitsInView();
                                                 scheduleAutosave();
@@ -2420,13 +2524,14 @@ scenes.forEach( updateStats );
 
                                         get 'cutUpOffset'() {
 
-                                                return localPlane1.constant;
+                                                return cutUpOffsetPct;
 
                                         },
 
                                         set 'cutUpOffset'( v ) {
 
-                                                localPlane1.constant = v;
+                                                cutUpOffsetPct = v;
+                                                syncCutPlaneConstants();
                                                 if ( isRestoring ) return;
                                                 updateGeometries( patternFirst ? {} : { editPattern: true } );
                                                 scheduleAutosave();
@@ -2435,13 +2540,14 @@ scenes.forEach( updateStats );
 
                                         get 'cutDownOffset'() {
 
-                                                return localPlane2.constant;
+                                                return cutDownOffsetPct;
 
                                         },
 
                                         set 'cutDownOffset'( v ) {
 
-                                                localPlane2.constant = v;
+                                                cutDownOffsetPct = v;
+                                                syncCutPlaneConstants();
                                                 if ( isRestoring ) return;
                                                 updateGeometries( patternFirst ? {} : { editPattern: true } );
                                                 scheduleAutosave();
@@ -2523,7 +2629,7 @@ scenes.forEach( updateStats );
                                         const editors = [
                                                 conicEditors.applyCuts,
                                                 conicEditors.coneAngle,
-                                                conicEditors.coneHeight,
+                                                conicEditors.scale,
                                                 conicEditors.cutAngle,
                                                 conicEditors.cutUpOffset,
                                                 conicEditors.cutDownOffset
@@ -2546,10 +2652,12 @@ scenes.forEach( updateStats );
                                         isRestoring = true;
                                         coneAngle = fitted.coneAngle;
                                         coneHeight = fitted.height;
+                                        coneScale = coneHeight / BASE_CONE_HEIGHT;
                                         coneRadius = fitted.radius;
+                                        syncCutPlaneConstants();
 
                                         if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( coneAngle );
-                                        if ( conicEditors.coneHeight ) conicEditors.coneHeight.setValue( coneHeight );
+                                        if ( conicEditors.scale ) conicEditors.scale.setValue( coneScale );
 
                                         isRestoring = prevRestoring;
 
@@ -2568,10 +2676,10 @@ scenes.forEach( updateStats );
                                 updateSwapButtonState();
                                 conicEditors.applyCuts = folderConic.add( propsConic, 'applyCuts' );
                                 conicEditors.coneAngle = folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
-                                conicEditors.coneHeight = folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
+                                conicEditors.scale = folderConic.add( propsConic, 'scale', 0.05, 20 ).step( 0.01 );
                                 conicEditors.cutAngle = folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
-                                conicEditors.cutUpOffset = folderConic.add( propsConic, 'cutUpOffset', - 3, 3 );
-                                conicEditors.cutDownOffset = folderConic.add( propsConic, 'cutDownOffset', - 3, 3 );
+                                conicEditors.cutUpOffset = folderConic.add( propsConic, 'cutUpOffset', - 50, 50 ).step( 1 ).name( 'cutUp %' );
+                                conicEditors.cutDownOffset = folderConic.add( propsConic, 'cutDownOffset', - 50, 50 ).step( 1 ).name( 'cutDown %' );
                                 updateConicEditorsMode();
 
                                 conicEditors.ClipShadows = folderScene.add( propsConic, 'ClipShadows' );
@@ -2579,6 +2687,7 @@ scenes.forEach( updateStats );
                                 conicEditors.autoZoom = folderScene.add( propsConic, 'autoZoom' );
 
                                 conicEditors.wallMaterial = folderMaterial.add( propsConic, 'wallMaterial', WALL_MATERIALS );
+                                conicEditors.thickness = folderMaterial.add( propsConic, 'thickness', 0, 5, 0.01 );
 
                                 function updatePlaneNormals() {
 
@@ -2624,10 +2733,28 @@ scenes.forEach( updateStats );
                                         _levelTarget.copy( _levelUp );
                                         if ( _levelNormal.dot( _levelUp ) < 0 ) _levelTarget.negate();
 
-                                        if ( _levelNormal.distanceToSquared( _levelTarget ) < 1e-12 ) return;
+                                        if ( _levelNormal.distanceToSquared( _levelTarget ) >= 1e-12 ) {
 
-                                        _levelQuat.setFromUnitVectors( _levelNormal, _levelTarget );
-                                        group.quaternion.premultiply( _levelQuat );
+                                                _levelQuat.setFromUnitVectors( _levelNormal, _levelTarget );
+                                                group.quaternion.premultiply( _levelQuat );
+                                                group.updateMatrixWorld( true );
+
+                                        }
+
+                                        // Sit the lower cut plane just above the ground.
+                                        const ground = scenes[ 0 ] && scenes[ 0 ].userData.ground;
+                                        const groundY = ground ? ground.position.y : - 5;
+                                        const clearance = 0.05;
+
+                                        getCutPlaneLocalAnchor( localPlane1, _fitPoint );
+                                        _fitPoint.applyMatrix4( group.matrixWorld );
+                                        const y1 = _fitPoint.y;
+                                        getCutPlaneLocalAnchor( localPlane2, _fitPoint );
+                                        _fitPoint.applyMatrix4( group.matrixWorld );
+                                        const lowerY = Math.min( y1, _fitPoint.y );
+
+                                        group.position.y += ( groundY + clearance ) - lowerY;
+                                        group.updateMatrixWorld( true );
                                         syncClippingPlanesToWorld();
                                         requestRender();
 
@@ -2671,6 +2798,110 @@ scenes.forEach( updateStats );
                                         }
 
                                         requestRender();
+
+                                }
+
+                                const coneRaycaster = new THREE.Raycaster();
+                                const conePointerNdc = new THREE.Vector2();
+                                const CONE_CLICK_MAX_MOVE = 5;
+                                let conePointerDown = null;
+
+                                function isPointOnVisibleCone( point ) {
+
+                                        if ( ! knotClippingGroups[ 0 ] || ! knotClippingGroups[ 0 ].enabled ) return true;
+
+                                        syncClippingPlanesToWorld();
+                                        return worldPlane1.distanceToPoint( point ) >= - 1e-4
+                                                && worldPlane2.distanceToPoint( point ) >= - 1e-4;
+
+                                }
+
+                                function tryHandleConeViewClick( event ) {
+
+                                        const scene = scenes[ 0 ];
+                                        if ( ! scene ) return;
+
+                                        const element = scene.userData.element;
+                                        const camera = scene.userData.camera;
+                                        const coneMesh = scene.userData.coneMesh;
+                                        const ground = scene.userData.ground;
+                                        if ( ! element || ! camera || ! coneMesh ) return;
+
+                                        if ( coneTransformControls && coneTransformControls.dragging ) return;
+
+                                        const rect = element.getBoundingClientRect();
+                                        if ( rect.width <= 0 || rect.height <= 0 ) return;
+
+                                        conePointerNdc.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1;
+                                        conePointerNdc.y = - ( ( event.clientY - rect.top ) / rect.height ) * 2 + 1;
+                                        coneRaycaster.setFromCamera( conePointerNdc, camera );
+
+                                        const targets = [ coneMesh ];
+                                        if ( ground && ground.visible ) targets.push( ground );
+
+                                        const hits = coneRaycaster.intersectObjects( targets, false );
+                                        for ( let i = 0; i < hits.length; i ++ ) {
+
+                                                const hit = hits[ i ];
+
+                                                if ( hit.object === coneMesh ) {
+
+                                                        if ( isPointOnVisibleCone( hit.point ) ) {
+
+                                                                setTransformMode( 'translate' );
+                                                                return;
+
+                                                        }
+
+                                                        continue;
+
+                                                }
+
+                                                if ( hit.object === ground ) {
+
+                                                        if ( transformMode ) setTransformMode( null );
+                                                        return;
+
+                                                }
+
+                                        }
+
+                                }
+
+                                {
+
+                                        const coneElement = scenes[ 0 ] && scenes[ 0 ].userData.element;
+                                        if ( coneElement ) {
+
+                                                coneElement.addEventListener( 'pointerdown', function ( event ) {
+
+                                                        if ( event.button !== 0 ) return;
+                                                        conePointerDown = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+
+                                                } );
+
+                                                coneElement.addEventListener( 'pointerup', function ( event ) {
+
+                                                        if ( ! conePointerDown || event.pointerId !== conePointerDown.pointerId ) return;
+
+                                                        const dx = event.clientX - conePointerDown.x;
+                                                        const dy = event.clientY - conePointerDown.y;
+                                                        conePointerDown = null;
+
+                                                        if ( event.button !== 0 ) return;
+                                                        if ( dx * dx + dy * dy > CONE_CLICK_MAX_MOVE * CONE_CLICK_MAX_MOVE ) return;
+
+                                                        tryHandleConeViewClick( event );
+
+                                                } );
+
+                                                coneElement.addEventListener( 'pointercancel', function () {
+
+                                                        conePointerDown = null;
+
+                                                } );
+
+                                        }
 
                                 }
 
@@ -2749,6 +2980,19 @@ scenes.forEach( updateStats );
                                                 if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = material;
 
                                         } );
+                                        requestRender();
+
+                                }
+
+                                function applyWallThickness() {
+
+                                        for ( let i = 0; i < WALL_MATERIALS.length; i ++ ) {
+
+                                                const material = wallMaterials[ WALL_MATERIALS[ i ] ];
+                                                if ( material ) material.thickness = wallThickness;
+
+                                        }
+
                                         requestRender();
 
                                 }
@@ -3040,8 +3284,9 @@ scenes.forEach( updateStats );
                                         if ( conicEditors.showGroundPlane ) conicEditors.showGroundPlane.setValue( params.showGroundPlane );
                                         if ( conicEditors.autoZoom ) conicEditors.autoZoom.setValue( params.autoZoom );
                                         if ( conicEditors.wallMaterial ) conicEditors.wallMaterial.setValue( params.wallMaterial );
+                                        if ( conicEditors.thickness && params.thickness != null ) conicEditors.thickness.setValue( params.thickness );
                                         if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( params.coneAngle );
-                                        if ( conicEditors.coneHeight ) conicEditors.coneHeight.setValue( params.coneHeight );
+                                        if ( conicEditors.scale ) conicEditors.scale.setValue( params.scale );
                                         if ( conicEditors.cutAngle ) conicEditors.cutAngle.setValue( params.cutAngle );
                                         if ( conicEditors.cutUpOffset ) conicEditors.cutUpOffset.setValue( params.cutUpOffset );
                                         if ( conicEditors.cutDownOffset ) conicEditors.cutDownOffset.setValue( params.cutDownOffset );
@@ -3113,16 +3358,70 @@ scenes.forEach( updateStats );
 
                                                 }
 
+                                                if ( 'thickness' in params ) {
+
+                                                        wallThickness = params.thickness;
+                                                        applyWallThickness();
+
+                                                }
+
                                                 const sizeChanged = ( 'coneAngle' in params && params.coneAngle !== coneAngle )
-                                                        || ( 'coneHeight' in params && params.coneHeight !== coneHeight );
+                                                        || ( 'scale' in params && params.scale !== coneScale )
+                                                        || ( 'coneHeight' in params && ! ( 'scale' in params ) && params.coneHeight !== coneHeight );
                                                 const cutAngleChanging = ( 'cutAngle' in params && params.cutAngle !== cutAngle );
                                                 const wasLevelled = cutAngleChanging && areCutPlanesLevelled();
 
                                                 if ( 'coneAngle' in params ) coneAngle = params.coneAngle;
-                                                if ( 'coneHeight' in params ) coneHeight = params.coneHeight;
+
+                                                if ( 'scale' in params ) {
+
+                                                        setConeScale( params.scale );
+
+                                                } else if ( 'coneHeight' in params ) {
+
+                                                        // Legacy saves stored absolute height.
+                                                        coneHeight = params.coneHeight;
+                                                        coneScale = coneHeight / BASE_CONE_HEIGHT;
+                                                        if ( ! ( 'cutUpOffset' in params ) && ! ( 'cutDownOffset' in params ) ) {
+
+                                                                syncCutPlaneConstants();
+
+                                                        }
+
+                                                }
+
                                                 if ( 'cutAngle' in params ) cutAngle = params.cutAngle;
-                                                if ( 'cutUpOffset' in params ) localPlane1.constant = params.cutUpOffset;
-                                                if ( 'cutDownOffset' in params ) localPlane2.constant = params.cutDownOffset;
+
+                                                if ( 'scale' in params ) {
+
+                                                        // Percent-of-height cut offsets. Pre-interval saves stored cutUp with opposite sign.
+                                                        if ( 'cutUpOffset' in params ) {
+
+                                                                cutUpOffsetPct = params.cutOffsetsInterval ? params.cutUpOffset : - params.cutUpOffset;
+
+                                                        }
+
+                                                        if ( 'cutDownOffset' in params ) cutDownOffsetPct = params.cutDownOffset;
+                                                        syncCutPlaneConstants();
+
+                                                } else {
+
+                                                        // Legacy saves stored absolute plane constants.
+                                                        if ( 'cutUpOffset' in params ) {
+
+                                                                cutUpOffsetPct = coneHeight > 0 ? - ( params.cutUpOffset / coneHeight ) * 100 : cutUpOffsetPct;
+                                                                localPlane1.constant = params.cutUpOffset;
+
+                                                        }
+
+                                                        if ( 'cutDownOffset' in params ) {
+
+                                                                cutDownOffsetPct = coneHeight > 0 ? ( params.cutDownOffset / coneHeight ) * 100 : cutDownOffsetPct;
+                                                                localPlane2.constant = params.cutDownOffset;
+
+                                                        }
+
+                                                }
 
                                                 let restoredConeMesh = false;
                                                 let restoredPatternMesh = false;
@@ -3275,12 +3574,17 @@ scenes.forEach( updateStats );
                                                         coneUsesParametricGeometry = true;
                                                         lastInverseDiagnostics = null;
                                                         coneAngle = 0.4;
-                                                        coneHeight = 5;
+                                                        setConeScale( 1 );
                                                         coneRadius = Math.tan( coneAngle ) * coneHeight;
                                                         cutAngle = 0.0;
-                                                        localPlane1.constant = 2.0;
-                                                        localPlane2.constant = 2.0;
+                                                        cutUpOffsetPct = - 40;
+                                                        cutDownOffsetPct = 40;
+                                                        syncCutPlaneConstants();
                                                         updatePlaneNormals();
+                                                        wallMaterial = 'clay';
+                                                        wallThickness = 0.25;
+                                                        applyWallThickness();
+                                                        updateConeWallMaterial();
 
                                                         knotClippingGroups.forEach( function ( group ) {
 
@@ -4783,6 +5087,33 @@ scenes.forEach( updateStats );
 
                         }
 
+                        function ensurePanelRenderTarget( scene, cssWidth, cssHeight ) {
+
+                                const pixelRatio = renderer.getPixelRatio();
+                                const width = Math.max( 1, Math.floor( cssWidth * pixelRatio ) );
+                                const height = Math.max( 1, Math.floor( cssHeight * pixelRatio ) );
+                                let renderTarget = scene.userData.renderTarget;
+
+                                if ( ! renderTarget ) {
+
+                                        renderTarget = new THREE.RenderTarget( width, height, {
+                                                type: THREE.HalfFloatType,
+                                                samples: 4,
+                                                depthBuffer: true
+                                        } );
+                                        renderTarget.texture.name = 'PanelRT';
+                                        scene.userData.renderTarget = renderTarget;
+
+                                } else if ( renderTarget.width !== width || renderTarget.height !== height ) {
+
+                                        renderTarget.setSize( width, height );
+
+                                }
+
+                                return renderTarget;
+
+                        }
+
                         function animate() {
 
                                 updateSize();
@@ -4791,51 +5122,58 @@ scenes.forEach( updateStats );
 
                                 renderer.setClearColor( 0xffffff );
                                 renderer.setScissorTest( false );
-                                renderer.setViewport( 0, 0, canvas.width, canvas.height );
+                                renderer.setRenderTarget( null );
+                                renderer.setViewport( 0, 0, canvas.clientWidth, canvas.clientHeight );
                                 renderer.clear();
-
-                                //renderer.setClearColor( 0xe0e0e0 );
-                                renderer.setScissorTest( true );
 
                                 scenes.forEach( function ( scene ) {
 
-                                        // so something moves
-                                        //scene.children[ 0 ].rotation.y = Date.now() * 0.001;
-
-                                        // get the element that is a place holder for where we want to
-                                        // draw the scene
                                         const element = scene.userData.element;
-
-                                        // get its position relative to the page's viewport
                                         const rect = element.getBoundingClientRect();
 
-                                        // check if it's offscreen. If so skip it
                                         if ( rect.bottom < 0 || rect.top > renderer.domElement.clientHeight ||
                                                  rect.right < 0 || rect.left > renderer.domElement.clientWidth ) {
 
-                                                return; // it's off screen
+                                                return;
 
                                         }
 
-                                        // set the viewport
-                                        const width = rect.right - rect.left;
-                                        const height = rect.bottom - rect.top;
+                                        const width = Math.max( 1, rect.right - rect.left );
+                                        const height = Math.max( 1, rect.bottom - rect.top );
                                         const left = rect.left;
                                         const top = rect.top;
 
-                                        renderer.setViewport( left, top, width, height );
-                                        renderer.setScissor( left, top, width, height );
-
                                         const camera = scene.userData.camera;
+                                        const aspect = width / height;
+                                        if ( Math.abs( camera.aspect - aspect ) > 1e-6 ) {
 
-                                        //camera.aspect = width / height; // not changing in this example
-                                        //camera.updateProjectionMatrix();
+                                                camera.aspect = aspect;
+                                                camera.updateProjectionMatrix();
 
-                                        //scene.userData.controls.update();
+                                        }
 
+                                        const renderTarget = ensurePanelRenderTarget( scene, width, height );
+
+                                        // Full-view render into the panel RT so transmission samples this camera only.
+                                        // (RenderTarget.viewport is already the full device-pixel size.)
+                                        renderer.setRenderTarget( renderTarget );
+                                        renderer.setScissorTest( false );
+                                        renderer.setClearColor( 0xeeeeee );
+                                        renderer.clear();
                                         renderer.render( scene, camera );
 
+                                        // Blit the panel RT into its canvas scissor region.
+                                        panelBlitTextureNode.value = renderTarget.texture;
+                                        renderer.setRenderTarget( null );
+                                        renderer.setScissorTest( true );
+                                        renderer.setViewport( left, top, width, height );
+                                        renderer.setScissor( left, top, width, height );
+                                        panelBlitQuad.render( renderer );
+
                                 } );
+
+                                renderer.setScissorTest( false );
+                                renderer.setRenderTarget( null );
 
                         }
 
