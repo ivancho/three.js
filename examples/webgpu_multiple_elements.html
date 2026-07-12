@@ -76,7 +76,8 @@
                                 margin-top: 0.4em;
                         }
 
-                        .download-svg {
+                        .download-svg,
+                        .tool-button {
                                 flex-shrink: 0;
                                 margin: 0;
                                 padding: 0.35em 0.8em;
@@ -90,8 +91,46 @@
                                 cursor: pointer;
                         }
 
-                        .download-svg:hover {
+                        .download-svg:hover,
+                        .tool-button:hover {
                                 background: #eee;
+                        }
+
+                        .tool-buttons {
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 0.35em;
+                                flex-shrink: 0;
+                        }
+
+                        .tool-button {
+                                display: inline-flex;
+                                align-items: center;
+                                justify-content: center;
+                                width: 2.1em;
+                                height: 2.1em;
+                                padding: 0;
+                                line-height: 0;
+                        }
+
+                        .tool-button svg {
+                                width: 1.15em;
+                                height: 1.15em;
+                                fill: none;
+                                stroke: currentColor;
+                                stroke-width: 1.75;
+                                stroke-linecap: round;
+                                stroke-linejoin: round;
+                        }
+
+                        .tool-button.active {
+                                color: #fff;
+                                background: #444;
+                                border-color: #333;
+                        }
+
+                        .tool-button.active:hover {
+                                background: #333;
                         }
 
                         #info .info-help {
@@ -180,7 +219,8 @@
                                 <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics
                                 <span class="info-help" tabindex="0" aria-label="Controls and save tips">?
                                         <span class="info-help-tooltip" role="tooltip">
-                                                Drag to rotate · right-click drag to move · scroll to zoom.
+                                                Drag to rotate the camera · right-click drag to pan · scroll to zoom.
+                                                Use Move / Rotate below the 3D view to place the sliced cone (clipping planes follow). Click again to turn the tool off. Esc also exits. Level makes the cut planes parallel to the ground.
                                                 Autosave keeps the last 20 param changes. Save with a name to store a separate named history. Select a name and version to restore.
                                                 Download SVG of the unrolled pattern to print.
                                         </span>
@@ -209,6 +249,7 @@ import * as THREE from 'three/webgpu';
                                 } from 'three/tsl';
                                 import { Inspector } from 'three/addons/inspector/Inspector.js';
                                 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+                                import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
                         let canvas, renderer;
                         let renderRequested = false;
@@ -359,15 +400,27 @@ import * as THREE from 'three/webgpu';
                                 let autoZoom = false;
                                 let wallMaterial = 'clay';
                                 const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
+                                // Canonical cut definition in cone-rig space. Flattening always uses these.
                                 const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), 2.0 );
                                 const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), 2.0 );
+                                // World-space copies for ClippingGroup rendering (updated when the rig moves/rotates).
+                                const worldPlane1 = localPlane1.clone();
+                                const worldPlane2 = localPlane2.clone();
                                 const _fitPoint = new THREE.Vector3();
                                 const _fitDir = new THREE.Vector3();
+                                const _levelNormal = new THREE.Vector3();
+                                const _levelTarget = new THREE.Vector3();
+                                const _levelUp = new THREE.Vector3( 0, 1, 0 );
+                                const _levelQuat = new THREE.Quaternion();
                                 const AUTO_ZOOM_FILL = 0.9; // leave a 10% margin; only zoom out past this
                                 const titles = [ '3D Cone Sliced', 'Unrolled Pattern' ];
                                 const objectMaterials = [];
                                 const groundMaterials = [];
                                 const knotClippingGroups = [];
+                                let transformMode = null;
+                                let coneTransformControls = null;
+                                let moveToolButton = null;
+                                let rotateToolButton = null;
                                 const wallMaterials = {
                                         clay: createClayMaterial(),
                                         glass: createGlassMaterial(),
@@ -425,7 +478,7 @@ import * as THREE from 'three/webgpu';
                                         if ( i === 0 ) {
 
                                                 const knotClippingGroup = new THREE.ClippingGroup();
-                                                knotClippingGroup.clippingPlanes = [ localPlane1, localPlane2 ];
+                                                knotClippingGroup.clippingPlanes = [ worldPlane1, worldPlane2 ];
                                                 knotClippingGroup.clipIntersection = false;
                                                 knotClippingGroup.clipShadows = true;
 
@@ -438,6 +491,72 @@ import * as THREE from 'three/webgpu';
                                                 knotClippingGroup.add( object );
                                                 scene.userData.coneMesh = object;
                                                 knotClippingGroups.push( knotClippingGroup );
+
+                                                const transformControls = new TransformControls( camera, sceneElement );
+                                                transformControls.attach( knotClippingGroup );
+                                                transformControls.enabled = false;
+                                                transformControls.getHelper().visible = false;
+                                                transformControls.addEventListener( 'dragging-changed', function ( event ) {
+
+                                                        controls.enabled = ! event.value;
+
+                                                } );
+                                                transformControls.addEventListener( 'objectChange', function () {
+
+                                                        syncClippingPlanesToWorld();
+                                                        requestRender();
+
+                                                } );
+                                                transformControls.addEventListener( 'change', requestRender );
+                                                scene.add( transformControls.getHelper() );
+                                                scene.userData.transformControls = transformControls;
+                                                coneTransformControls = transformControls;
+
+                                                const toolButtons = document.createElement( 'div' );
+                                                toolButtons.className = 'tool-buttons';
+
+                                                moveToolButton = document.createElement( 'button' );
+                                                moveToolButton.type = 'button';
+                                                moveToolButton.className = 'tool-button';
+                                                moveToolButton.title = 'Move';
+                                                moveToolButton.setAttribute( 'aria-label', 'Move' );
+                                                moveToolButton.setAttribute( 'aria-pressed', 'false' );
+                                                moveToolButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>';
+                                                moveToolButton.addEventListener( 'click', function () {
+
+                                                        setTransformMode( transformMode === 'translate' ? null : 'translate' );
+
+                                                } );
+
+                                                rotateToolButton = document.createElement( 'button' );
+                                                rotateToolButton.type = 'button';
+                                                rotateToolButton.className = 'tool-button';
+                                                rotateToolButton.title = 'Rotate';
+                                                rotateToolButton.setAttribute( 'aria-label', 'Rotate' );
+                                                rotateToolButton.setAttribute( 'aria-pressed', 'false' );
+                                                rotateToolButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3M19.5 12a7.5 7.5 0 0 1-12.8 5.3M17.3 4.5V8.2h-3.7M6.7 19.5v-3.7h3.7"/></svg>';
+                                                rotateToolButton.addEventListener( 'click', function () {
+
+                                                        setTransformMode( transformMode === 'rotate' ? null : 'rotate' );
+
+                                                } );
+
+                                                const levelToolButton = document.createElement( 'button' );
+                                                levelToolButton.type = 'button';
+                                                levelToolButton.className = 'tool-button';
+                                                levelToolButton.title = 'Level cuts to ground';
+                                                levelToolButton.setAttribute( 'aria-label', 'Level cuts to ground' );
+                                                levelToolButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h18"/><path d="M6 8.5h12v7H6z"/><path d="M11 12h2"/></svg>';
+                                                levelToolButton.addEventListener( 'click', function () {
+
+                                                        levelCutPlanesToGround();
+
+                                                } );
+
+                                                toolButtons.appendChild( moveToolButton );
+                                                toolButtons.appendChild( rotateToolButton );
+                                                toolButtons.appendChild( levelToolButton );
+                                                headerElement.appendChild( toolButtons );
 
                                                 scene.userData.statsElement = statsElement;
                                                 camera.position.set( 0, 6, 9 );
@@ -889,8 +1008,10 @@ scenes.forEach( updateStats );
 
                                         set 'cutAngle'( v ) {
 
+                                                const wasLevelled = areCutPlanesLevelled();
                                                 cutAngle = v;
                                                 updateGeometries();
+                                                if ( wasLevelled ) levelCutPlanesToGround();
                                                 scheduleAutosave();
 
                                         },
@@ -947,6 +1068,99 @@ scenes.forEach( updateStats );
                                         localPlane2.normal.copy( normal2 );
 
                                 }
+
+                                function syncClippingPlanesToWorld() {
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group ) return;
+
+                                        group.updateMatrixWorld( true );
+                                        worldPlane1.copy( localPlane1 ).applyMatrix4( group.matrixWorld );
+                                        worldPlane2.copy( localPlane2 ).applyMatrix4( group.matrixWorld );
+
+                                }
+
+                                function areCutPlanesLevelled() {
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group ) return false;
+
+                                        group.updateMatrixWorld( true );
+                                        _levelNormal.copy( localPlane1.normal ).transformDirection( group.matrixWorld ).normalize();
+
+                                        return Math.abs( Math.abs( _levelNormal.dot( _levelUp ) ) - 1 ) < 1e-4;
+
+                                }
+
+                                function levelCutPlanesToGround() {
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group ) return;
+
+                                        group.updateMatrixWorld( true );
+                                        _levelNormal.copy( localPlane1.normal ).transformDirection( group.matrixWorld ).normalize();
+
+                                        _levelTarget.copy( _levelUp );
+                                        if ( _levelNormal.dot( _levelUp ) < 0 ) _levelTarget.negate();
+
+                                        if ( _levelNormal.distanceToSquared( _levelTarget ) < 1e-12 ) return;
+
+                                        _levelQuat.setFromUnitVectors( _levelNormal, _levelTarget );
+                                        group.quaternion.premultiply( _levelQuat );
+                                        syncClippingPlanesToWorld();
+                                        requestRender();
+
+                                }
+
+                                function setTransformMode( mode ) {
+
+                                        transformMode = ( mode === 'translate' || mode === 'rotate' ) ? mode : null;
+
+                                        if ( coneTransformControls ) {
+
+                                                if ( transformMode ) {
+
+                                                        coneTransformControls.setMode( transformMode );
+                                                        coneTransformControls.enabled = true;
+                                                        coneTransformControls.getHelper().visible = true;
+
+                                                } else {
+
+                                                        coneTransformControls.enabled = false;
+                                                        coneTransformControls.getHelper().visible = false;
+
+                                                }
+
+                                        }
+
+                                        if ( moveToolButton ) {
+
+                                                const active = transformMode === 'translate';
+                                                moveToolButton.classList.toggle( 'active', active );
+                                                moveToolButton.setAttribute( 'aria-pressed', active ? 'true' : 'false' );
+
+                                        }
+
+                                        if ( rotateToolButton ) {
+
+                                                const active = transformMode === 'rotate';
+                                                rotateToolButton.classList.toggle( 'active', active );
+                                                rotateToolButton.setAttribute( 'aria-pressed', active ? 'true' : 'false' );
+
+                                        }
+
+                                        requestRender();
+
+                                }
+
+                                window.addEventListener( 'keydown', function ( event ) {
+
+                                        if ( event.key !== 'Escape' || ! transformMode ) return;
+                                        if ( event.target && ( event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable ) ) return;
+
+                                        setTransformMode( null );
+
+                                } );
 
                                 function updateGroundVisibility() {
 
@@ -1041,7 +1255,9 @@ scenes.forEach( updateStats );
 
                                         coneRadius = Math.tan( coneAngle ) * coneHeight;
                                         updatePlaneNormals();
+                                        syncClippingPlanesToWorld();
                                         const newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                        // Flattening uses local (rig-space) planes only — cone pose must not affect the unrolled pattern.
                                         const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, knotClippingGroups[ 0 ].enabled );
 
                                         scenes.forEach( function ( scene ) {
@@ -1134,6 +1350,8 @@ scenes.forEach( updateStats );
 
                                                 const sizeChanged = ( 'coneAngle' in params && params.coneAngle !== coneAngle )
                                                         || ( 'coneHeight' in params && params.coneHeight !== coneHeight );
+                                                const cutAngleChanging = ( 'cutAngle' in params && params.cutAngle !== cutAngle );
+                                                const wasLevelled = cutAngleChanging && areCutPlanesLevelled();
 
                                                 if ( 'coneAngle' in params ) coneAngle = params.coneAngle;
                                                 if ( 'coneHeight' in params ) coneHeight = params.coneHeight;
@@ -1142,6 +1360,7 @@ scenes.forEach( updateStats );
                                                 if ( 'cutDownOffset' in params ) localPlane2.constant = params.cutDownOffset;
 
                                                 updateGeometries();
+                                                if ( wasLevelled ) levelCutPlanesToGround();
                                                 if ( sizeChanged ) ensureConeFitsInView();
                                                 syncConicEditors();
 
@@ -1671,9 +1890,10 @@ scenes.forEach( updateStats );
 
                                 function getConeLocalClippingPlanes( plane1, plane2 ) {
 
-                                        // The 3D cone mesh is drawn with rotation.z = π, while ClippingGroup
-                                        // planes live in parent/world space. Flattening builds the unrotated
-                                        // cone, so convert the planes into that local frame first.
+                                        // Flattening builds an unrotated cone in geometry space. The 3D cone mesh
+                                        // has rotation.z = π relative to the clipping-group (rig) frame, where
+                                        // plane1/plane2 are defined. Convert planes into that mesh-local frame.
+                                        // Do not apply the rig's world pose here — pose must not affect the unroll.
                                         const worldToLocal = new THREE.Matrix4().makeRotationZ( Math.PI );
 
                                         return [
