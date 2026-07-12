@@ -253,20 +253,25 @@ import * as THREE from 'three/webgpu';
 
                         let canvas, renderer;
                         let renderRequested = false;
+                        let rendererReady = false;
 
                         const scenes = [];
 
-                        init();
+                        init().catch( function ( error ) {
+
+                                console.error( error );
+
+                        } );
 
                         function requestRender() {
 
-                                if ( renderRequested ) return;
+                                if ( ! rendererReady || renderRequested ) return;
 
                                 renderRequested = true;
                                 requestAnimationFrame( function () {
 
                                         renderRequested = false;
-                                        if ( renderer ) animate();
+                                        if ( rendererReady ) animate();
 
                                 } );
 
@@ -384,7 +389,7 @@ import * as THREE from 'three/webgpu';
 
                         }
 
-                        function init() {
+                        async function init() {
 
                                 canvas = document.getElementById( 'c' );
 
@@ -636,16 +641,18 @@ import * as THREE from 'three/webgpu';
                                         dirLight.position.set( 4, 8, 5 );
                                         dirLight.castShadow = true;
                                         dirLight.shadow.mapType = THREE.HalfFloatType;
-                                        dirLight.shadow.camera.near = 1;
-                                        dirLight.shadow.camera.far = 20;
+                                        // Ground is 20×20; keep the ortho frustum large enough in light space
+                                        // (tilted light makes a too-small box project as a diamond on the ground).
+                                        dirLight.shadow.camera.near = 0.5;
+                                        dirLight.shadow.camera.far = 40;
+                                        dirLight.shadow.camera.right = 18;
+                                        dirLight.shadow.camera.left = - 18;
+                                        dirLight.shadow.camera.top = 18;
+                                        dirLight.shadow.camera.bottom = - 18;
+                                        dirLight.shadow.camera.updateProjectionMatrix();
 
-                                        dirLight.shadow.camera.right = 5;
-                                        dirLight.shadow.camera.left = - 5;
-                                        dirLight.shadow.camera.top = 5;
-                                        dirLight.shadow.camera.bottom = - 5;
-
-                                        dirLight.shadow.mapSize.width = 1024;
-                                        dirLight.shadow.mapSize.height = 1024;
+                                        dirLight.shadow.mapSize.width = 2048;
+                                        dirLight.shadow.mapSize.height = 2048;
                                         scene.add( dirLight );
 
                                         const lightAbove = new THREE.PointLight( 0xffffff, 50, 50 );
@@ -692,14 +699,15 @@ import * as THREE from 'three/webgpu';
                                         dirLightBelow.position.set( 0, - 10, 2 );
                                         dirLightBelow.castShadow = true;
                                         dirLightBelow.shadow.mapType = THREE.HalfFloatType;
-                                        dirLightBelow.shadow.camera.near = 1;
-                                        dirLightBelow.shadow.camera.far = 20;
-                                        dirLightBelow.shadow.camera.right = 5;
-                                        dirLightBelow.shadow.camera.left = - 5;
-                                        dirLightBelow.shadow.camera.top = 5;
-                                        dirLightBelow.shadow.camera.bottom = - 5;
-                                        dirLightBelow.shadow.mapSize.width = 1024;
-                                        dirLightBelow.shadow.mapSize.height = 1024;
+                                        dirLightBelow.shadow.camera.near = 0.5;
+                                        dirLightBelow.shadow.camera.far = 40;
+                                        dirLightBelow.shadow.camera.right = 18;
+                                        dirLightBelow.shadow.camera.left = - 18;
+                                        dirLightBelow.shadow.camera.top = 18;
+                                        dirLightBelow.shadow.camera.bottom = - 18;
+                                        dirLightBelow.shadow.camera.updateProjectionMatrix();
+                                        dirLightBelow.shadow.mapSize.width = 2048;
+                                        dirLightBelow.shadow.mapSize.height = 2048;
                                         scene.add( dirLightBelow );
 
                                         scenes.push( scene );
@@ -712,6 +720,9 @@ import * as THREE from 'three/webgpu';
                                 renderer.setClearColor( 0xffffff, 1 );
                                 renderer.setPixelRatio( window.devicePixelRatio );
                                 renderer.inspector = new Inspector();
+
+                                await renderer.init();
+                                rendererReady = true;
 
                                 window.addEventListener( 'resize', requestRender );
                                 window.addEventListener( 'scroll', requestRender, { passive: true } );
