@@ -93,6 +93,13 @@
                         .download-svg:hover {
                                 background: #eee;
                         }
+
+                        .controls-hint {
+                                font-family: sans-serif;
+                                font-size: 0.85em;
+                                color: #666;
+                                margin-top: 0.25em;
+                        }
                 </style>
         </head>
         <body>
@@ -100,7 +107,10 @@
                 <canvas id="c"></canvas>
 
                 <div id="content">
-                        <div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics</div>
+                        <div id="info">
+                                <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics
+                                <div class="controls-hint">Drag to rotate · right-click drag to move · scroll to zoom</div>
+                        </div>
                 </div>
 
                 <script type="importmap">
