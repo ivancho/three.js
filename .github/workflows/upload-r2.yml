@@ -16,6 +16,11 @@ on:
         required: false
         type: string
         default: ''
+      path_rewrites:
+        description: JSON object of path rewrite rules (e.g. {"examples/":"","files":"examples/files"})
+        required: false
+        type: string
+        default: ''
   push:
     branches:
       - conics
@@ -36,6 +41,7 @@ jobs:
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       DESTINATION_FOLDER: ${{ github.event.inputs.destination_folder || vars.R2_DESTINATION_FOLDER }}
       PATH_PREFIX: ${{ github.event.inputs.path_prefix || vars.R2_UPLOAD_PATH_PREFIX || '' }}
+      PATH_REWRITES: ${{ github.event.inputs.path_rewrites || vars.R2_PATH_REWRITES || '{}' }}
     steps:
       - name: Git checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -55,6 +61,24 @@ jobs:
             echo "Missing required configuration: ${missing[*]}"
             exit 1
           fi
+
+          python3 - <<'PY'
+          import json, os, sys
+          raw = os.environ.get("PATH_REWRITES") or "{}"
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError as e:
+              print(f"PATH_REWRITES is not valid JSON: {e}")
+              sys.exit(1)
+          if not isinstance(data, dict):
+              print("PATH_REWRITES must be a JSON object of key:value path rewrites")
+              sys.exit(1)
+          for key, value in data.items():
+              if not isinstance(key, str) or not isinstance(value, str):
+                  print("PATH_REWRITES keys and values must be strings")
+                  sys.exit(1)
+          print(f"Path rewrites: {data}")
+          PY
 
       - name: Collect changed files
         id: changed
@@ -103,23 +127,205 @@ jobs:
           unzip -q awscliv2.zip
           sudo ./aws/install --update
 
+      - name: Prepare upload mappings
+        id: mappings
+        if: steps.changed.outputs.has_files == 'true'
+        env:
+          DESTINATION: ${{ env.DESTINATION_FOLDER }}
+        run: |
+          export DESTINATION="${DESTINATION_FOLDER%/}"
+          python3 <<'PY'
+          import json, os, re, sys
+
+          rewrites = json.loads(os.environ.get("PATH_REWRITES") or "{}")
+          destination = os.environ["DESTINATION"].rstrip("/")
+          errors = []
+          mappings = []
+
+          with open("changed_files.txt", encoding="utf-8") as handle:
+              for file_path in handle:
+                  file_path = file_path.strip()
+                  if not file_path or not os.path.isfile(file_path):
+                      continue
+
+                  if "/" in file_path:
+                      directory, filename = file_path.rsplit("/", 1)
+                      directory = directory + "/"
+                  else:
+                      directory, filename = "", file_path
+
+                  matches = [key for key in rewrites if key in directory]
+                  if len(matches) > 1:
+                      errors.append(
+                          f"{file_path}: directory '{directory}' matches multiple rewrite keys: {matches}"
+                      )
+                      continue
+
+                  if len(matches) == 1:
+                      key = matches[0]
+                      directory = directory.replace(key, rewrites[key], 1)
+
+                  remote = re.sub(r"/{2,}", "/", f"{directory}{filename}").strip("/")
+                  object_key = f"{destination}/{remote}" if destination else remote
+                  object_key = re.sub(r"/{2,}", "/", object_key).strip("/")
+                  mappings.append((file_path, object_key, remote))
+
+          if errors:
+              print("Path rewrite conflicts detected; aborting before any uploads:")
+              for error in errors:
+                  print(f"  - {error}")
+              sys.exit(1)
+
+          if not mappings:
+              print("No uploadable files after mapping.")
+              sys.exit(1)
+
+          with open("upload_mappings.tsv", "w", encoding="utf-8") as out:
+              for file_path, object_key, remote in mappings:
+                  out.write(f"{file_path}\t{object_key}\t{remote}\n")
+                  print(f"{file_path} -> {object_key}")
+
+          print(f"Prepared {len(mappings)} file mapping(s).")
+          PY
+
       - name: Upload to R2
         if: steps.changed.outputs.has_files == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          DESTINATION: ${{ env.DESTINATION_FOLDER }}
         run: |
-          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          destination="${DESTINATION_FOLDER%/}"
+          export DESTINATION="${DESTINATION_FOLDER%/}"
+          export BUCKET="$R2_BUCKET"
+          export ENDPOINT="$R2_ENDPOINT"
+          export RUN_ID
 
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            [ ! -f "$file" ] && continue
+          python3 <<'PY'
+          import os
+          import subprocess
+          import sys
 
-            key="${destination}/${file}"
-            echo "Uploading ${file} -> s3://${R2_BUCKET}/${key}"
+          bucket = os.environ["BUCKET"]
+          endpoint = os.environ["ENDPOINT"]
+          destination = os.environ["DESTINATION"].rstrip("/")
+          run_id = os.environ["RUN_ID"]
+          staging_root = "/".join(
+              part for part in (destination, ".r2-upload-staging", run_id) if part
+          )
+          backup_root = "/".join(
+              part for part in (destination, ".r2-upload-backup", run_id) if part
+          )
 
-            aws s3 cp "$file" "s3://${R2_BUCKET}/${key}" \
-              --endpoint-url "$endpoint"
-          done < changed_files.txt
+          mappings = []
+          with open("upload_mappings.tsv", encoding="utf-8") as handle:
+              for line in handle:
+                  line = line.strip()
+                  if not line:
+                      continue
+                  local_path, final_key, remote = line.split("\t")
+                  staging_key = f"{staging_root}/{remote}"
+                  backup_key = f"{backup_root}/{remote}"
+                  mappings.append(
+                      {
+                          "local": local_path,
+                          "final": final_key,
+                          "staging": staging_key,
+                          "backup": backup_key,
+                          "remote": remote,
+                      }
+                  )
+
+
+          def run_aws(args, check=True):
+              cmd = ["aws", "s3", *args, "--endpoint-url", endpoint]
+              print("+", " ".join(cmd))
+              return subprocess.run(cmd, check=check)
+
+
+          def object_exists(key):
+              result = subprocess.run(
+                  [
+                      "aws", "s3api", "head-object",
+                      "--bucket", bucket,
+                      "--key", key,
+                      "--endpoint-url", endpoint,
+                  ],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+              )
+              return result.returncode == 0
+
+
+          def delete_prefix(prefix):
+              run_aws(["rm", f"s3://{bucket}/{prefix}", "--recursive"], check=False)
+
+
+          backed_up = []
+          staged = []
+          promoted = []
+
+          def rollback():
+              print("Upload failed; rolling back changes from this run...")
+              for item in reversed(promoted):
+                  if item in backed_up:
+                      run_aws(
+                          [
+                              "cp",
+                              f"s3://{bucket}/{item['backup']}",
+                              f"s3://{bucket}/{item['final']}",
+                          ],
+                          check=False,
+                      )
+                  else:
+                      run_aws(["rm", f"s3://{bucket}/{item['final']}"], check=False)
+              delete_prefix(staging_root)
+              delete_prefix(backup_root)
+
+
+          try:
+              print("Backing up existing destination objects...")
+              for item in mappings:
+                  if object_exists(item["final"]):
+                      run_aws(
+                          [
+                              "cp",
+                              f"s3://{bucket}/{item['final']}",
+                              f"s3://{bucket}/{item['backup']}",
+                          ]
+                      )
+                      backed_up.append(item)
+
+              print("Uploading all files to staging...")
+              for item in mappings:
+                  run_aws(
+                      [
+                          "cp",
+                          item["local"],
+                          f"s3://{bucket}/{item['staging']}",
+                      ]
+                  )
+                  staged.append(item)
+
+              print("Promoting staged files to final keys...")
+              for item in mappings:
+                  run_aws(
+                      [
+                          "cp",
+                          f"s3://{bucket}/{item['staging']}",
+                          f"s3://{bucket}/{item['final']}",
+                      ]
+                  )
+                  promoted.append(item)
+
+              print("Cleaning up staging and backup prefixes...")
+              delete_prefix(staging_root)
+              delete_prefix(backup_root)
+              print(f"Successfully uploaded {len(mappings)} file(s).")
+          except Exception as exc:
+              print(f"Error during atomic upload: {exc}", file=sys.stderr)
+              rollback()
+              sys.exit(1)
+          PY
