@@ -221,7 +221,7 @@
                                         <span class="info-help-tooltip" role="tooltip">
                                                 Drag to rotate the camera · right-click drag to pan · scroll to zoom.
                                                 Use Move / Rotate below the 3D view to place the sliced cone (clipping planes follow). Click again to turn the tool off. Esc also exits. Level makes the cut planes parallel to the ground.
-                                                Autosave keeps the last 20 param changes. Save with a name to store a separate named history. Select a name and version to restore.
+                                                Autosave writes pending edits to local storage immediately and promotes up to 20 versions about once a minute. Save with a name to store a separate named history. Select a name and version to restore.
                                                 Download SVG of the unrolled pattern to print.
                                         </span>
                                 </span>
@@ -737,18 +737,21 @@ scenes.forEach( updateStats );
                                 const STORAGE_KEY = 'threejs.webgpu_multiple_elements.params';
                                 const HISTORY_LIMIT = 20;
                                 const AUTOSAVE_DEBOUNCE_MS = 150;
+                                const AUTOSAVE_FLUSH_MS = 60_000;
+                                const PENDING_AUTOSAVE_LIMIT = 30;
                                 const EMPTY_SELECT = '—';
                                 const AUTOSAVE_LABEL = '<autosave>';
 
                                 let isRestoring = false;
-                                let autosaveTimer = null;
-                                let store = { autosave: [], named: {} };
+                                let autosaveDebounceTimer = null;
+                                let autosaveFlushTimer = null;
+                                let store = { autosave: [], pending: [], named: {} };
                                 const conicEditors = {};
                                 const persistEditors = {};
 
                                 function createEmptyStore() {
 
-                                        return { autosave: [], named: {} };
+                                        return { autosave: [], pending: [], named: {} };
 
                                 }
 
@@ -764,6 +767,7 @@ scenes.forEach( updateStats );
 
                                                 return {
                                                         autosave: Array.isArray( parsed.autosave ) ? parsed.autosave : [],
+                                                        pending: Array.isArray( parsed.pending ) ? parsed.pending : [],
                                                         named: parsed.named && typeof parsed.named === 'object' ? parsed.named : {}
                                                 };
 
@@ -880,21 +884,74 @@ scenes.forEach( updateStats );
 
                                         if ( isRestoring ) return;
 
-                                        clearTimeout( autosaveTimer );
-                                        autosaveTimer = setTimeout( commitAutosave, AUTOSAVE_DEBOUNCE_MS );
+                                        clearTimeout( autosaveDebounceTimer );
+                                        autosaveDebounceTimer = setTimeout( capturePendingAutosave, AUTOSAVE_DEBOUNCE_MS );
 
                                 }
 
-                                function commitAutosave() {
+                                function capturePendingAutosave() {
 
                                         if ( isRestoring ) return;
 
                                         const params = getParams();
-                                        if ( store.autosave[ 0 ] && paramsEqual( store.autosave[ 0 ].params, params ) ) return;
+                                        if ( store.pending[ 0 ] && paramsEqual( store.pending[ 0 ].params, params ) ) return;
+                                        if ( ! store.pending[ 0 ] && store.autosave[ 0 ] && paramsEqual( store.autosave[ 0 ].params, params ) ) return;
 
-                                        pushVersion( store.autosave, { t: Date.now(), params: params } );
+                                        pushVersion( store.pending, { t: Date.now(), params: params }, PENDING_AUTOSAVE_LIMIT );
+                                        saveStore();
+
+                                }
+
+                                function flushPendingAutosave() {
+
+                                        if ( isRestoring ) return;
+
+                                        clearTimeout( autosaveDebounceTimer );
+                                        autosaveDebounceTimer = null;
+                                        capturePendingAutosave();
+
+                                        if ( store.pending.length === 0 ) return;
+
+                                        const snapshot = store.pending[ 0 ];
+                                        store.pending.length = 0;
+
+                                        if ( ! store.autosave[ 0 ] || ! paramsEqual( store.autosave[ 0 ].params, snapshot.params ) ) {
+
+                                                pushVersion( store.autosave, { t: Date.now(), params: snapshot.params } );
+
+                                        }
+
                                         saveStore();
                                         refreshPersistenceUI();
+
+                                }
+
+                                function recoverPendingAutosaves() {
+
+                                        if ( store.pending.length === 0 ) return;
+
+                                        const snapshot = store.pending[ 0 ];
+                                        store.pending.length = 0;
+
+                                        if ( ! store.autosave[ 0 ] || ! paramsEqual( store.autosave[ 0 ].params, snapshot.params ) ) {
+
+                                                pushVersion( store.autosave, {
+                                                        t: snapshot.t || Date.now(),
+                                                        params: snapshot.params
+                                                } );
+
+                                        }
+
+                                        saveStore();
+
+                                }
+
+                                function startAutosaveFlushTimer() {
+
+                                        if ( autosaveFlushTimer !== null ) return;
+
+                                        autosaveFlushTimer = setInterval( flushPendingAutosave, AUTOSAVE_FLUSH_MS );
+                                        window.addEventListener( 'beforeunload', flushPendingAutosave );
 
                                 }
 
@@ -1384,6 +1441,7 @@ scenes.forEach( updateStats );
                                 }
 
                                 store = loadStore();
+                                recoverPendingAutosaves();
                                 if ( store.autosave[ 0 ] ) applyParams( store.autosave[ 0 ].params );
 
                                 const folderPersist = gui.addFolder( 'Persistence' );
@@ -1405,16 +1463,27 @@ scenes.forEach( updateStats );
                                                 pushVersion( store.named[ name ].versions, { t: Date.now(), params: getParams() } );
                                                 saveStore();
                                                 propsPersist.load = name;
-                                                refreshPersistenceUI();
+                                                refreshPersistenceUI( true );
 
                                         },
                                         Load() {
 
-                                                const versions = getVersionsForLoad( propsPersist.load );
+                                                const loadName = propsPersist.load;
+                                                const versions = getVersionsForLoad( loadName );
                                                 const index = parseSnapshotIndex( propsPersist.version, versions.length );
                                                 if ( index < 0 || ! versions[ index ] ) return;
 
                                                 applyParams( versions[ index ].params );
+
+                                                if ( loadName === AUTOSAVE_LABEL ) {
+
+                                                        setSaveNameInput( '' );
+
+                                                } else if ( loadName && loadName !== EMPTY_SELECT ) {
+
+                                                        setSaveNameInput( loadName );
+
+                                                }
 
                                         },
                                         Delete() {
@@ -1425,6 +1494,7 @@ scenes.forEach( updateStats );
                                                 if ( name === AUTOSAVE_LABEL ) {
 
                                                         store.autosave = [];
+                                                        store.pending = [];
 
                                                 } else if ( store.named[ name ] ) {
 
@@ -1457,19 +1527,28 @@ scenes.forEach( updateStats );
 
                                 } );
 
-                                function refreshVersionSelect() {
+                                function setSaveNameInput( name ) {
+
+                                        propsPersist.name = name;
+                                        if ( persistEditors.name ) persistEditors.name.setValue( name );
+
+                                }
+
+                                function refreshVersionSelect( selectLatest = false ) {
 
                                         const versions = getVersionsForLoad( propsPersist.load );
                                         const options = versions.length
                                                 ? versions.map( ( entry, index ) => formatSnapshotLabel( entry, index, versions.length ) )
                                                 : [ EMPTY_SELECT ];
-                                        const selected = options.includes( propsPersist.version ) ? propsPersist.version : options[ 0 ];
+                                        const selected = ( ! selectLatest && options.includes( propsPersist.version ) )
+                                                ? propsPersist.version
+                                                : options[ 0 ];
                                         propsPersist.version = selected;
                                         replaceSelectOptions( persistEditors.version, options, selected );
 
                                 }
 
-                                function refreshPersistenceUI() {
+                                function refreshPersistenceUI( selectLatestVersion = false ) {
 
                                         if ( ! persistEditors.load ) return;
 
@@ -1479,11 +1558,12 @@ scenes.forEach( updateStats );
                                         propsPersist.load = selectedLoad;
                                         replaceSelectOptions( persistEditors.load, loadOptions, selectedLoad );
 
-                                        refreshVersionSelect();
+                                        refreshVersionSelect( selectLatestVersion );
 
                                 }
 
                                 refreshPersistenceUI();
+                                startAutosaveFlushTimer();
 
                                 function computeBoundingBoxSizes( geometry ) {
 
