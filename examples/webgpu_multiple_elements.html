@@ -47,6 +47,27 @@
                                 box-shadow: 1px 2px 4px 0px rgba(0,0,0,0.25);
                         }
 
+                        .panels-row {
+                                display: flex;
+                                flex-direction: row;
+                                align-items: center;
+                                justify-content: center;
+                                gap: 0.35em;
+                                width: 100%;
+                                padding: 0 0.5em;
+                        }
+
+                        .panels-row .list-item {
+                                flex: 1 1 0;
+                                width: auto;
+                                max-width: 45%;
+                                margin: 1em 0.35em;
+                        }
+
+                        .panels-row .swap-panels-button {
+                                flex: 0 0 auto;
+                        }
+
                         .list-item > div:nth-child(1) {
                                 width: 100%;
                                 height: 400px;
@@ -62,9 +83,38 @@
                         }
 
                         .list-item-header .title {
+                                display: inline-flex;
+                                align-items: center;
+                                gap: 0.45em;
                                 color: #888;
                                 font-family: sans-serif;
                                 font-size: large;
+                        }
+
+                        .geometry-mode-badge {
+                                display: inline-flex;
+                                align-items: center;
+                                padding: 0.15em 0.45em;
+                                border-radius: 3px;
+                                border: 1px solid #bbb;
+                                background: #f0f0f0;
+                                color: #555;
+                                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                                font-size: 0.58em;
+                                font-weight: 600;
+                                letter-spacing: 0.02em;
+                                line-height: 1.3;
+                                white-space: nowrap;
+                                vertical-align: middle;
+                        }
+
+                        .persistence-separator {
+                                display: block;
+                                height: 0;
+                                margin: 0.65em 0.75em 0.55em;
+                                border: 0;
+                                border-top: 1px solid rgba( 128, 128, 128, 0.45 );
+                                pointer-events: none;
                         }
 
                         .stats {
@@ -167,15 +217,15 @@
                                 top: calc( 100% + 0.45em );
                                 transform: translateX( -50% );
                                 width: max-content;
-                                max-width: min( 22rem, 80vw );
-                                padding: 0.65em 0.8em;
-                                border-radius: 4px;
+                                max-width: min( 36rem, 92vw );
+                                padding: 0.9em 1.1em;
+                                border-radius: 6px;
                                 background: #222;
                                 color: #f2f2f2;
                                 font-family: sans-serif;
-                                font-size: 1em;
+                                font-size: 1.15em;
                                 font-weight: 400;
-                                line-height: 1.45;
+                                line-height: 1.5;
                                 text-align: left;
                                 white-space: normal;
                                 box-shadow: 0 4px 14px rgba( 0, 0, 0, 0.2 );
@@ -183,6 +233,16 @@
                                 pointer-events: none;
                                 transition: opacity 0.12s ease;
                                 z-index: 3;
+                        }
+
+                        #info .info-help-tooltip p {
+                                margin: 0;
+                        }
+
+                        #info .info-help-tooltip p + p {
+                                margin-top: 0.75em;
+                                padding-top: 0.75em;
+                                border-top: 1px solid rgba( 255, 255, 255, 0.18 );
                         }
 
                         #info .info-help-tooltip::before {
@@ -202,9 +262,22 @@
 
                         @media (max-width: 999px) {
 
-                                .list-item {
+                                .panels-row {
+                                        flex-direction: column;
+                                        align-items: stretch;
+                                }
+
+                                .panels-row .list-item {
                                         width: calc(100% - 2em);
+                                        max-width: none;
+                                        margin: 1em;
                                         display: block;
+                                }
+
+                                .panels-row .swap-panels-button {
+                                        align-self: center;
+                                        margin-top: 0;
+                                        order: 0;
                                 }
 
                         }
@@ -219,10 +292,22 @@
                                 <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics
                                 <span class="info-help" tabindex="0" aria-label="Controls and save tips">?
                                         <span class="info-help-tooltip" role="tooltip">
-                                                Drag to rotate the camera · right-click drag to pan · scroll to zoom.
-                                                Use Move / Rotate below the 3D view to place the sliced cone (clipping planes follow). Click again to turn the tool off. Esc also exits. Level makes the cut planes parallel to the ground.
-                                                Autosave writes pending edits to local storage immediately and promotes up to 20 versions about once a minute. Save with a name to store a separate named history. Select a name and version to restore.
-                                                Download SVG of the unrolled pattern to print.
+                                                <p>Drag to rotate the camera · right-click drag to pan · scroll to zoom.</p>
+                                                <p>Use the Move / Rotate icons below the 3D view to modify the position and rotation of the sliced cone (clipping planes follow). 
+                                                        Click the same icon again to turn the tool off. Esc also exits.
+                                                        The last command button also levels the cut planes.
+                                                </p>
+                                                <p>Use the soon-to-be-released swap button to move the unrolled pattern first: edit the flat shape and lift it to a 3D cone (clipping planes can still trim it). 
+                                                        Swap back to edit the 3D cone and flatten it.
+                                                </p>
+                                                <p>Autosave writes pending edits to local storage immediately (mesh buffers go to IndexedDB; 
+                                                        snapshots keep only mesh keys) and promotes up to 20 versions about once a minute. 
+                                                        ⌘Z / Ctrl+Z steps back through pending snapshots (then the latest autosave); 
+                                                        ⌘⇧Z / Ctrl+Shift+Z steps forward. 
+                                                        Peeled redo tails are kept in IndexedDB so undoing a branch-point edit can restore them. 
+                                                        Save with a name to store a separate named history. 
+                                                        Select a name and version to restore.</p>
+                                                <p>Download SVG of the unrolled pattern to print.</p>
                                         </span>
                                 </span>
                         </div>
@@ -234,7 +319,8 @@
                                         "three": "./build/three.webgpu.js",
                                         "three/webgpu": "./build/three.webgpu.js",
                                         "three/tsl": "./build/three.tsl.js",
-                                        "three/addons/": "./jsm/"
+                                        "three/addons/": "./jsm/",
+                                        "three/src/": "../src/"
                                 }
                         }
                 </script>
@@ -250,6 +336,7 @@ import * as THREE from 'three/webgpu';
                                 import { Inspector } from 'three/addons/inspector/Inspector.js';
                                 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
                                 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+                                import { Earcut } from 'three/src/extras/Earcut.js';
 
                         let canvas, renderer;
                         let renderRequested = false;
@@ -403,8 +490,11 @@ import * as THREE from 'three/webgpu';
                                 let cutAngle = 0.0;
                                 let showGroundPlane = true;
                                 let autoZoom = false;
+                                let patternFirst = false;
+                                let coneUsesParametricGeometry = true;
                                 let wallMaterial = 'clay';
                                 const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
+                                let lastInverseDiagnostics = null;
                                 // Canonical cut definition in cone-rig space. Flattening always uses these.
                                 const localPlane1 = new THREE.Plane( new THREE.Vector3( Math.sin( cutAngle ), Math.cos( cutAngle ), 0 ), 2.0 );
                                 const localPlane2 = new THREE.Plane( new THREE.Vector3( - Math.sin( cutAngle ), - Math.cos( cutAngle ), 0 ), 2.0 );
@@ -418,6 +508,7 @@ import * as THREE from 'three/webgpu';
                                 const _levelUp = new THREE.Vector3( 0, 1, 0 );
                                 const _levelQuat = new THREE.Quaternion();
                                 const AUTO_ZOOM_FILL = 0.9; // leave a 10% margin; only zoom out past this
+                                const APEX_EPS = 1e-10;
                                 const titles = [ '3D Cone Sliced', 'Unrolled Pattern' ];
                                 const objectMaterials = [];
                                 const groundMaterials = [];
@@ -426,6 +517,7 @@ import * as THREE from 'three/webgpu';
                                 let coneTransformControls = null;
                                 let moveToolButton = null;
                                 let rotateToolButton = null;
+                                let geometryModeBadge = null;
                                 const wallMaterials = {
                                         clay: createClayMaterial(),
                                         glass: createGlassMaterial(),
@@ -433,6 +525,19 @@ import * as THREE from 'three/webgpu';
                                 };
 
                                 const content = document.getElementById( 'content' );
+                                const panelsRow = document.createElement( 'div' );
+                                panelsRow.className = 'panels-row';
+                                content.appendChild( panelsRow );
+
+                                const swapPanelsButton = document.createElement( 'button' );
+                                swapPanelsButton.type = 'button';
+                                swapPanelsButton.id = 'swap-panels';
+                                swapPanelsButton.className = 'tool-button swap-panels-button';
+                                swapPanelsButton.title = 'Pattern first — modify flat shape and lift to 3D cone';
+                                swapPanelsButton.setAttribute( 'aria-label', 'Swap panel order' );
+                                swapPanelsButton.setAttribute( 'aria-pressed', 'false' );
+                                swapPanelsButton.style.display = 'none';
+                                swapPanelsButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11M4 7l4-4M4 7l4 4M20 17H9M20 17l-4-4M20 17l-4 4"/></svg>';
 
                                 for ( let i = 0; i < 2; i ++ ) {
 
@@ -453,11 +558,24 @@ import * as THREE from 'three/webgpu';
                                         descriptionElement.className = 'title';
                                         descriptionElement.innerText = titles[ i ];
                                         headerElement.appendChild( descriptionElement );
+
+                                        if ( i === 0 ) {
+
+                                                geometryModeBadge = document.createElement( 'span' );
+                                                geometryModeBadge.className = 'geometry-mode-badge';
+                                                geometryModeBadge.textContent = 'ConeGeometry';
+                                                geometryModeBadge.title = 'Parametric cone — rebuilt from cone params';
+                                                geometryModeBadge.style.display = 'none';
+                                                descriptionElement.appendChild( geometryModeBadge );
+
+                                        }
+
                                         element.appendChild( headerElement );
 
                                         // the element that represents the area we want to render the scene
                                         scene.userData.element = sceneElement;
-                                        content.appendChild( element );
+                                        scene.userData.listItem = element;
+                                        panelsRow.appendChild( element );
 
                                         const statsElement = document.createElement( 'div' );
                                         statsElement.className = 'stats';
@@ -714,6 +832,16 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                // Place the swap control between the two panels.
+                                if ( scenes[ 1 ] && scenes[ 1 ].userData.listItem ) {
+
+                                        panelsRow.insertBefore( swapPanelsButton, scenes[ 1 ].userData.listItem );
+
+                                } else {
+
+                                        panelsRow.appendChild( swapPanelsButton );
+
+                                }
 
                                 renderer = new THREE.WebGPURenderer( { canvas: canvas, antialias: true } );
                                 renderer.shadowMap.enabled = true;
@@ -735,23 +863,78 @@ scenes.forEach( updateStats );
                                 };
 
                                 const STORAGE_KEY = 'threejs.webgpu_multiple_elements.params';
+                                const MESH_DB_NAME = 'threejs.webgpu_multiple_elements.meshes';
+                                const MESH_DB_VERSION = 2;
+                                const MESH_STORE_NAME = 'meshes';
+                                const REDO_DISPOSAL_STORE = 'redoDisposal';
+                                const REDO_DISPOSAL_LIMIT = 30;
                                 const HISTORY_LIMIT = 20;
                                 const AUTOSAVE_DEBOUNCE_MS = 150;
                                 const AUTOSAVE_FLUSH_MS = 60_000;
                                 const PENDING_AUTOSAVE_LIMIT = 30;
                                 const EMPTY_SELECT = '—';
                                 const AUTOSAVE_LABEL = '<autosave>';
+                                const CONIC_VERSION_COOKIE = 'X-conic-version';
 
                                 let isRestoring = false;
                                 let autosaveDebounceTimer = null;
                                 let autosaveFlushTimer = null;
                                 let store = { autosave: [], pending: [], named: {} };
+                                let historyIndex = 0; // 0 = newest pending tip; higher = older
+                                let historyAtAutosave = false;
+                                let meshDbPromise = null;
+                                const meshMemoryCache = new Map();
+                                const pendingMeshWrites = new Map();
+                                const redoDisposalCache = new Map();
                                 const conicEditors = {};
                                 const persistEditors = {};
 
                                 function createEmptyStore() {
 
                                         return { autosave: [], pending: [], named: {} };
+
+                                }
+
+                                function getConicFeatureVersion() {
+
+                                        const raw = document.cookie || '';
+                                        if ( ! raw ) return 0;
+
+                                        const parts = raw.split( ';' );
+                                        for ( let i = 0; i < parts.length; i ++ ) {
+
+                                                const piece = parts[ i ].trim();
+                                                if ( ! piece ) continue;
+                                                const eq = piece.indexOf( '=' );
+                                                const name = eq === - 1 ? piece : piece.slice( 0, eq );
+                                                if ( name !== CONIC_VERSION_COOKIE ) continue;
+                                                const value = eq === - 1 ? '' : piece.slice( eq + 1 );
+                                                const parsed = parseInt( decodeURIComponent( value ), 10 );
+                                                return Number.isFinite( parsed ) ? parsed : 0;
+
+                                        }
+
+                                        return 0;
+
+                                }
+
+                                function isConicV2Enabled() {
+
+                                        return getConicFeatureVersion() >= 2;
+
+                                }
+
+                                function isBufferGeometrySnapshot( params ) {
+
+                                        if ( ! params ) return false;
+                                        return !! (
+                                                params.coneMeshId ||
+                                                params.patternMeshId ||
+                                                params.coneMesh ||
+                                                params.patternMesh ||
+                                                params.patternFirst ||
+                                                params.coneUsesParametricGeometry === false
+                                        );
 
                                 }
 
@@ -765,11 +948,13 @@ scenes.forEach( updateStats );
                                                 const parsed = JSON.parse( raw );
                                                 if ( ! parsed || typeof parsed !== 'object' ) return createEmptyStore();
 
-                                                return {
+                                                const next = {
                                                         autosave: Array.isArray( parsed.autosave ) ? parsed.autosave : [],
                                                         pending: Array.isArray( parsed.pending ) ? parsed.pending : [],
                                                         named: parsed.named && typeof parsed.named === 'object' ? parsed.named : {}
                                                 };
+                                                sanitizeStoreInlineMeshes( next );
+                                                return next;
 
                                         } catch ( e ) {
 
@@ -780,7 +965,550 @@ scenes.forEach( updateStats );
 
                                 }
 
-                                function saveStore() {
+                                function paramsForLocalStorage( params ) {
+
+                                        if ( ! params ) return params;
+
+                                        const next = Object.assign( {}, params );
+                                        delete next.coneMesh;
+                                        delete next.patternMesh;
+                                        return next;
+
+                                }
+
+                                function sanitizeSnapshotList( list ) {
+
+                                        if ( ! Array.isArray( list ) ) return;
+
+                                        for ( let i = 0; i < list.length; i ++ ) {
+
+                                                const entry = list[ i ];
+                                                if ( ! entry || ! entry.params ) continue;
+                                                if ( ! entry.params.coneMesh && ! entry.params.patternMesh ) continue;
+                                                list[ i ] = { t: entry.t, params: paramsForLocalStorage( entry.params ) };
+
+                                        }
+
+                                }
+
+                                function sanitizeStoreInlineMeshes( target = store ) {
+
+                                        sanitizeSnapshotList( target.autosave );
+                                        sanitizeSnapshotList( target.pending );
+
+                                        if ( target.named ) {
+
+                                                Object.keys( target.named ).forEach( function ( name ) {
+
+                                                        const named = target.named[ name ];
+                                                        if ( named && Array.isArray( named.versions ) ) sanitizeSnapshotList( named.versions );
+
+                                                } );
+
+                                        }
+
+                                }
+
+                                function openMeshDb() {
+
+                                        if ( meshDbPromise ) return meshDbPromise;
+
+                                        meshDbPromise = new Promise( function ( resolve, reject ) {
+
+                                                const request = indexedDB.open( MESH_DB_NAME, MESH_DB_VERSION );
+
+                                                request.onupgradeneeded = function () {
+
+                                                        const db = request.result;
+                                                        if ( ! db.objectStoreNames.contains( MESH_STORE_NAME ) ) {
+
+                                                                db.createObjectStore( MESH_STORE_NAME, { keyPath: 'id' } );
+
+                                                        }
+
+                                                        if ( ! db.objectStoreNames.contains( REDO_DISPOSAL_STORE ) ) {
+
+                                                                db.createObjectStore( REDO_DISPOSAL_STORE, { keyPath: 'peelTimestamp' } );
+
+                                                        }
+
+                                                };
+
+                                                request.onsuccess = function () {
+
+                                                        resolve( request.result );
+
+                                                };
+
+                                                request.onerror = function () {
+
+                                                        meshDbPromise = null;
+                                                        reject( request.error || new Error( 'Failed to open mesh IndexedDB' ) );
+
+                                                };
+
+                                        } );
+
+                                        return meshDbPromise;
+
+                                }
+
+                                async function ensureRedoDisposalStore( db ) {
+
+                                        if ( db.objectStoreNames.contains( REDO_DISPOSAL_STORE ) ) return db;
+
+                                        db.close();
+                                        meshDbPromise = null;
+                                        return openMeshDb();
+
+                                }
+
+                                function snapshotForDisposal( entry ) {
+
+                                        if ( ! entry ) return null;
+                                        return {
+                                                t: entry.t,
+                                                params: paramsForLocalStorage( entry.params )
+                                        };
+
+                                }
+
+                                async function putRedoDisposal( record ) {
+
+                                        redoDisposalCache.set( record.peelTimestamp, record );
+
+                                        try {
+
+                                                let db = await openMeshDb();
+                                                db = await ensureRedoDisposalStore( db );
+                                                await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( REDO_DISPOSAL_STORE, 'readwrite' );
+                                                        tx.objectStore( REDO_DISPOSAL_STORE ).put( record );
+                                                        tx.oncomplete = function () {
+
+                                                                resolve();
+
+                                                        };
+
+                                                        tx.onerror = function () {
+
+                                                                reject( tx.error );
+
+                                                        };
+
+                                                } );
+
+                                                await pruneRedoDisposal();
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to store redo disposal', e );
+
+                                        }
+
+                                }
+
+                                async function getRedoDisposal( peelTimestamp ) {
+
+                                        if ( peelTimestamp == null ) return null;
+                                        if ( redoDisposalCache.has( peelTimestamp ) ) return redoDisposalCache.get( peelTimestamp );
+
+                                        try {
+
+                                                let db = await openMeshDb();
+                                                db = await ensureRedoDisposalStore( db );
+                                                const record = await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( REDO_DISPOSAL_STORE, 'readonly' );
+                                                        const request = tx.objectStore( REDO_DISPOSAL_STORE ).get( peelTimestamp );
+                                                        request.onsuccess = function () {
+
+                                                                resolve( request.result || null );
+
+                                                        };
+
+                                                        request.onerror = function () {
+
+                                                                reject( request.error );
+
+                                                        };
+
+                                                } );
+
+                                                if ( record ) redoDisposalCache.set( peelTimestamp, record );
+                                                return record;
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to load redo disposal', e );
+                                                return null;
+
+                                        }
+
+                                }
+
+                                async function deleteRedoDisposal( peelTimestamp ) {
+
+                                        if ( peelTimestamp == null ) return;
+                                        redoDisposalCache.delete( peelTimestamp );
+
+                                        try {
+
+                                                let db = await openMeshDb();
+                                                if ( ! db.objectStoreNames.contains( REDO_DISPOSAL_STORE ) ) return;
+                                                await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( REDO_DISPOSAL_STORE, 'readwrite' );
+                                                        tx.objectStore( REDO_DISPOSAL_STORE ).delete( peelTimestamp );
+                                                        tx.oncomplete = function () {
+
+                                                                resolve();
+
+                                                        };
+
+                                                        tx.onerror = function () {
+
+                                                                reject( tx.error );
+
+                                                        };
+
+                                                } );
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to delete redo disposal', e );
+
+                                        }
+
+                                }
+
+                                async function clearRedoDisposal() {
+
+                                        redoDisposalCache.clear();
+
+                                        try {
+
+                                                let db = await openMeshDb();
+                                                if ( ! db.objectStoreNames.contains( REDO_DISPOSAL_STORE ) ) return;
+                                                await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( REDO_DISPOSAL_STORE, 'readwrite' );
+                                                        tx.objectStore( REDO_DISPOSAL_STORE ).clear();
+                                                        tx.oncomplete = function () {
+
+                                                                resolve();
+
+                                                        };
+
+                                                        tx.onerror = function () {
+
+                                                                reject( tx.error );
+
+                                                        };
+
+                                                } );
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to clear redo disposal', e );
+
+                                        }
+
+                                }
+
+                                async function pruneRedoDisposal() {
+
+                                        if ( redoDisposalCache.size <= REDO_DISPOSAL_LIMIT ) return;
+
+                                        const keys = Array.from( redoDisposalCache.keys() ).sort( function ( a, b ) {
+
+                                                return b - a;
+
+                                        } );
+
+                                        for ( let i = REDO_DISPOSAL_LIMIT; i < keys.length; i ++ ) {
+
+                                                await deleteRedoDisposal( keys[ i ] );
+
+                                        }
+
+                                }
+
+                                async function loadRedoDisposalCache() {
+
+                                        try {
+
+                                                let db = await openMeshDb();
+                                                db = await ensureRedoDisposalStore( db );
+                                                const records = await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( REDO_DISPOSAL_STORE, 'readonly' );
+                                                        const request = tx.objectStore( REDO_DISPOSAL_STORE ).getAll();
+                                                        request.onsuccess = function () {
+
+                                                                resolve( request.result || [] );
+
+                                                        };
+
+                                                        request.onerror = function () {
+
+                                                                reject( request.error );
+
+                                                        };
+
+                                                } );
+
+                                                redoDisposalCache.clear();
+                                                for ( let i = 0; i < records.length; i ++ ) {
+
+                                                        redoDisposalCache.set( records[ i ].peelTimestamp, records[ i ] );
+
+                                                }
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to load redo disposal cache', e );
+
+                                        }
+
+                                }
+
+                                function queueMeshRecord( id, record ) {
+
+                                        const entry = Object.assign( { id: id }, record );
+                                        meshMemoryCache.set( id, entry );
+                                        pendingMeshWrites.set( id, entry );
+
+                                }
+
+                                async function flushMeshWrites() {
+
+                                        if ( pendingMeshWrites.size === 0 ) return;
+
+                                        const entries = Array.from( pendingMeshWrites.values() );
+                                        pendingMeshWrites.clear();
+
+                                        try {
+
+                                                const db = await openMeshDb();
+                                                await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( MESH_STORE_NAME, 'readwrite' );
+                                                        const objectStore = tx.objectStore( MESH_STORE_NAME );
+
+                                                        for ( let i = 0; i < entries.length; i ++ ) {
+
+                                                                objectStore.put( entries[ i ] );
+
+                                                        }
+
+                                                        tx.oncomplete = function () {
+
+                                                                resolve();
+
+                                                        };
+
+                                                        tx.onerror = function () {
+
+                                                                reject( tx.error );
+
+                                                        };
+
+                                                        tx.onabort = function () {
+
+                                                                reject( tx.error || new Error( 'Mesh IndexedDB write aborted' ) );
+
+                                                        };
+
+                                                } );
+
+                                        } catch ( e ) {
+
+                                                for ( let i = 0; i < entries.length; i ++ ) {
+
+                                                        pendingMeshWrites.set( entries[ i ].id, entries[ i ] );
+
+                                                }
+
+                                                console.warn( 'Failed to persist meshes to IndexedDB', e );
+                                                throw e;
+
+                                        }
+
+                                }
+
+                                async function getMeshRecord( id ) {
+
+                                        if ( ! id ) return null;
+                                        if ( meshMemoryCache.has( id ) ) return meshMemoryCache.get( id );
+
+                                        try {
+
+                                                const db = await openMeshDb();
+                                                const record = await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( MESH_STORE_NAME, 'readonly' );
+                                                        const request = tx.objectStore( MESH_STORE_NAME ).get( id );
+                                                        request.onsuccess = function () {
+
+                                                                resolve( request.result || null );
+
+                                                        };
+
+                                                        request.onerror = function () {
+
+                                                                reject( request.error );
+
+                                                        };
+
+                                                } );
+
+                                                if ( record ) meshMemoryCache.set( id, record );
+                                                return record;
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to load mesh from IndexedDB', id, e );
+                                                return null;
+
+                                        }
+
+                                }
+
+                                function collectReferencedMeshIds( target = store ) {
+
+                                        const ids = new Set();
+
+                                        function addFromParams( params ) {
+
+                                                if ( ! params ) return;
+                                                if ( params.coneMeshId ) ids.add( params.coneMeshId );
+                                                if ( params.patternMeshId ) ids.add( params.patternMeshId );
+
+                                        }
+
+                                        function walk( list ) {
+
+                                                if ( ! Array.isArray( list ) ) return;
+                                                for ( let i = 0; i < list.length; i ++ ) {
+
+                                                        if ( list[ i ] ) addFromParams( list[ i ].params );
+
+                                                }
+
+                                        }
+
+                                        walk( target.autosave );
+                                        walk( target.pending );
+
+                                        if ( target.named ) {
+
+                                                Object.keys( target.named ).forEach( function ( name ) {
+
+                                                        const named = target.named[ name ];
+                                                        if ( named ) walk( named.versions );
+
+                                                } );
+
+                                        }
+
+                                        pendingMeshWrites.forEach( function ( _value, id ) {
+
+                                                ids.add( id );
+
+                                        } );
+
+                                        redoDisposalCache.forEach( function ( record ) {
+
+                                                walk( record.redoTail );
+
+                                        } );
+
+                                        return ids;
+
+                                }
+
+                                async function gcUnreferencedMeshes() {
+
+                                        const keep = collectReferencedMeshIds();
+
+                                        try {
+
+                                                const db = await openMeshDb();
+                                                const existing = await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( MESH_STORE_NAME, 'readonly' );
+                                                        const request = tx.objectStore( MESH_STORE_NAME ).getAllKeys();
+                                                        request.onsuccess = function () {
+
+                                                                resolve( request.result || [] );
+
+                                                        };
+
+                                                        request.onerror = function () {
+
+                                                                reject( request.error );
+
+                                                        };
+
+                                                } );
+
+                                                const toDelete = existing.filter( function ( id ) {
+
+                                                        return ! keep.has( id );
+
+                                                } );
+
+                                                if ( toDelete.length === 0 ) return;
+
+                                                await new Promise( function ( resolve, reject ) {
+
+                                                        const tx = db.transaction( MESH_STORE_NAME, 'readwrite' );
+                                                        const objectStore = tx.objectStore( MESH_STORE_NAME );
+
+                                                        for ( let i = 0; i < toDelete.length; i ++ ) {
+
+                                                                objectStore.delete( toDelete[ i ] );
+                                                                meshMemoryCache.delete( toDelete[ i ] );
+
+                                                        }
+
+                                                        tx.oncomplete = function () {
+
+                                                                resolve();
+
+                                                        };
+
+                                                        tx.onerror = function () {
+
+                                                                reject( tx.error );
+
+                                                        };
+
+                                                } );
+
+                                        } catch ( e ) {
+
+                                                console.warn( 'Failed to garbage-collect mesh IndexedDB entries', e );
+
+                                        }
+
+                                }
+
+                                async function saveStore() {
+
+                                        sanitizeStoreInlineMeshes( store );
+
+                                        try {
+
+                                                await flushMeshWrites();
+
+                                        } catch ( e ) {
+
+                                                // Still try to persist scalar snapshot keys.
+
+                                        }
 
                                         try {
 
@@ -788,15 +1516,35 @@ scenes.forEach( updateStats );
 
                                         } catch ( e ) {
 
-                                                console.warn( 'Failed to save params to localStorage', e );
+                                                store.pending.length = Math.min( store.pending.length, 1 );
+                                                store.autosave.length = Math.min( store.autosave.length, 5 );
+
+                                                try {
+
+                                                        localStorage.setItem( STORAGE_KEY, JSON.stringify( store ) );
+                                                        console.warn( 'localStorage quota hit; trimmed history and retried', e );
+
+                                                } catch ( e2 ) {
+
+                                                        console.warn( 'Failed to save params to localStorage', e2 );
+                                                        return false;
+
+                                                }
 
                                         }
+
+                                        await gcUnreferencedMeshes();
+                                        return true;
 
                                 }
 
                                 function pushVersion( list, snapshot, limit = HISTORY_LIMIT ) {
 
-                                        list.unshift( snapshot );
+                                        const entry = {
+                                                t: snapshot.t,
+                                                params: paramsForLocalStorage( snapshot.params )
+                                        };
+                                        list.unshift( entry );
                                         if ( list.length > limit ) list.length = limit;
 
                                 }
@@ -809,22 +1557,380 @@ scenes.forEach( updateStats );
                                                 a.ClipShadows === b.ClipShadows &&
                                                 a.showGroundPlane === b.showGroundPlane &&
                                                 a.autoZoom === b.autoZoom &&
+                                                a.patternFirst === b.patternFirst &&
+                                                a.coneUsesParametricGeometry === b.coneUsesParametricGeometry &&
                                                 a.wallMaterial === b.wallMaterial &&
                                                 a.coneAngle === b.coneAngle &&
                                                 a.coneHeight === b.coneHeight &&
                                                 a.cutAngle === b.cutAngle &&
                                                 a.cutUpOffset === b.cutUpOffset &&
-                                                a.cutDownOffset === b.cutDownOffset;
+                                                a.cutDownOffset === b.cutDownOffset &&
+                                                a.coneMeshId === b.coneMeshId &&
+                                                a.patternMeshId === b.patternMeshId;
+
+                                }
+
+                                function mixHashBytes( hash, bytes ) {
+
+                                        let h = hash;
+                                        for ( let i = 0; i < bytes.length; i ++ ) {
+
+                                                h ^= bytes[ i ];
+                                                h = Math.imul( h, 16777619 );
+
+                                        }
+
+                                        return h;
+
+                                }
+
+                                function mixHashTypedArray( hash, typedArray ) {
+
+                                        if ( ! typedArray ) return hash;
+                                        return mixHashBytes( hash, new Uint8Array( typedArray.buffer, typedArray.byteOffset, typedArray.byteLength ) );
+
+                                }
+
+                                function hashMeshRecord( record ) {
+
+                                        let h = 2166136261 >>> 0;
+                                        h = mixHashTypedArray( h, record.position );
+                                        h = mixHashTypedArray( h, record.uv );
+
+                                        if ( record.index && record.index.data ) {
+
+                                                h ^= record.index.type === 'u16' ? 1 : 2;
+                                                h = mixHashTypedArray( h, record.index.data );
+
+                                        }
+
+                                        if ( record.developableOffset ) {
+
+                                                const offset = new Float32Array( [
+                                                        record.developableOffset.x || 0,
+                                                        record.developableOffset.z || 0
+                                                ] );
+                                                h = mixHashTypedArray( h, offset );
+
+                                        }
+
+                                        return 'm' + ( h >>> 0 ).toString( 16 );
+
+                                }
+
+                                function copyFloat32Attr( attribute ) {
+
+                                        if ( ! attribute ) return null;
+                                        return attribute.array instanceof Float32Array
+                                                ? new Float32Array( attribute.array )
+                                                : new Float32Array( attribute.array );
+
+                                }
+
+                                function copyIndexAttr( index ) {
+
+                                        if ( ! index ) return null;
+
+                                        const src = index.array;
+                                        let max = 0;
+                                        for ( let i = 0; i < src.length; i ++ ) max = Math.max( max, src[ i ] );
+
+                                        if ( max <= 65535 ) {
+
+                                                return {
+                                                        type: 'u16',
+                                                        data: src instanceof Uint16Array ? new Uint16Array( src ) : new Uint16Array( src )
+                                                };
+
+                                        }
+
+                                        return {
+                                                type: 'u32',
+                                                data: src instanceof Uint32Array ? new Uint32Array( src ) : new Uint32Array( src )
+                                        };
+
+                                }
+
+                                function typedArrayToBase64( typedArray ) {
+
+                                        const bytes = new Uint8Array( typedArray.buffer, typedArray.byteOffset, typedArray.byteLength );
+                                        const chunk = 0x8000;
+                                        let binary = '';
+
+                                        for ( let i = 0; i < bytes.length; i += chunk ) {
+
+                                                binary += String.fromCharCode.apply( null, bytes.subarray( i, i + chunk ) );
+
+                                        }
+
+                                        return btoa( binary );
+
+                                }
+
+                                function base64ToTypedArray( base64, TypedArray ) {
+
+                                        const binary = atob( base64 );
+                                        const bytes = new Uint8Array( binary.length );
+
+                                        for ( let i = 0; i < binary.length; i ++ ) {
+
+                                                bytes[ i ] = binary.charCodeAt( i );
+
+                                        }
+
+                                        return new TypedArray( bytes.buffer );
+
+                                }
+
+                                function decodeFloat32Attr( data ) {
+
+                                        if ( ! data ) return null;
+                                        if ( data instanceof Float32Array ) return data;
+                                        if ( ArrayBuffer.isView( data ) ) return new Float32Array( data.buffer, data.byteOffset, data.byteLength / 4 );
+                                        if ( typeof data === 'string' ) return base64ToTypedArray( data, Float32Array );
+                                        if ( Array.isArray( data ) ) return new Float32Array( data );
+                                        return null;
+
+                                }
+
+                                function decodeIndexAttr( data ) {
+
+                                        if ( ! data ) return null;
+
+                                        if ( typeof data === 'object' && data.data != null && data.type ) {
+
+                                                if ( ArrayBuffer.isView( data.data ) ) return Array.from( data.data );
+                                                if ( typeof data.data === 'string' ) {
+
+                                                        const TypedArray = data.type === 'u16' ? Uint16Array : Uint32Array;
+                                                        return Array.from( base64ToTypedArray( data.data, TypedArray ) );
+
+                                                }
+
+                                                if ( Array.isArray( data.data ) ) return data.data;
+
+                                        }
+
+                                        if ( typeof data === 'string' ) return Array.from( base64ToTypedArray( data, Uint32Array ) );
+                                        if ( Array.isArray( data ) ) return data;
+                                        if ( ArrayBuffer.isView( data ) ) return Array.from( data );
+                                        return null;
+
+                                }
+
+                                function serializeBufferGeometry( geometry ) {
+
+                                        if ( ! geometry || ! geometry.isBufferGeometry ) return null;
+
+                                        const position = copyFloat32Attr( geometry.getAttribute( 'position' ) );
+                                        if ( ! position || position.length < 9 ) return null;
+
+                                        const snapshot = {
+                                                encoding: 'typed',
+                                                position: position
+                                        };
+
+                                        const uv = copyFloat32Attr( geometry.getAttribute( 'uv' ) );
+                                        if ( uv ) snapshot.uv = uv;
+
+                                        const index = copyIndexAttr( geometry.index );
+                                        if ( index ) snapshot.index = index;
+
+                                        if ( geometry.userData && geometry.userData.developableParams ) {
+
+                                                snapshot.developableParams = {
+                                                        coneAngle: geometry.userData.developableParams.coneAngle,
+                                                        height: geometry.userData.developableParams.height,
+                                                        radius: geometry.userData.developableParams.radius
+                                                };
+
+                                        }
+
+                                        if ( geometry.userData && geometry.userData.developableRange ) {
+
+                                                snapshot.developableRange = {
+                                                        minR: geometry.userData.developableRange.minR,
+                                                        maxR: geometry.userData.developableRange.maxR,
+                                                        outOfRangeCount: geometry.userData.developableRange.outOfRangeCount
+                                                };
+
+                                        }
+
+                                        if ( geometry.userData && geometry.userData.developableOffset ) {
+
+                                                snapshot.developableOffset = {
+                                                        x: geometry.userData.developableOffset.x,
+                                                        z: geometry.userData.developableOffset.z
+                                                };
+
+                                        }
+
+                                        return snapshot;
+
+                                }
+
+                                function migrateLegacyMeshSnapshot( snapshot ) {
+
+                                        if ( ! snapshot ) return null;
+                                        if ( snapshot.encoding === 'typed' && snapshot.position instanceof Float32Array ) return snapshot;
+
+                                        const positions = decodeFloat32Attr( snapshot.position );
+                                        if ( ! positions || positions.length < 9 ) return null;
+
+                                        const record = {
+                                                encoding: 'typed',
+                                                position: positions
+                                        };
+
+                                        const uvs = decodeFloat32Attr( snapshot.uv );
+                                        if ( uvs ) record.uv = uvs;
+
+                                        if ( snapshot.index ) {
+
+                                                if ( typeof snapshot.index === 'object' && snapshot.index.data != null && ArrayBuffer.isView( snapshot.index.data ) ) {
+
+                                                        record.index = {
+                                                                type: snapshot.index.type === 'u16' ? 'u16' : 'u32',
+                                                                data: snapshot.index.type === 'u16'
+                                                                        ? new Uint16Array( snapshot.index.data )
+                                                                        : new Uint32Array( snapshot.index.data )
+                                                        };
+
+                                                } else {
+
+                                                        const indices = decodeIndexAttr( snapshot.index );
+                                                        if ( indices && indices.length >= 3 ) {
+
+                                                                let max = 0;
+                                                                for ( let i = 0; i < indices.length; i ++ ) max = Math.max( max, indices[ i ] );
+                                                                record.index = max <= 65535
+                                                                        ? { type: 'u16', data: new Uint16Array( indices ) }
+                                                                        : { type: 'u32', data: new Uint32Array( indices ) };
+
+                                                        }
+
+                                                }
+
+                                        }
+
+                                        if ( snapshot.developableParams ) record.developableParams = snapshot.developableParams;
+                                        if ( snapshot.developableRange ) record.developableRange = snapshot.developableRange;
+                                        if ( snapshot.developableOffset ) record.developableOffset = snapshot.developableOffset;
+
+                                        return record;
+
+                                }
+
+                                function deserializeBufferGeometry( snapshot ) {
+
+                                        if ( ! snapshot ) return null;
+
+                                        const record = migrateLegacyMeshSnapshot( snapshot );
+                                        if ( ! record ) return null;
+
+                                        const positions = record.position;
+                                        if ( ! positions || positions.length < 9 ) return null;
+
+                                        const geometry = new THREE.BufferGeometry();
+                                        geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( new Float32Array( positions ), 3 ) );
+
+                                        if ( record.uv && record.uv.length >= 2 ) {
+
+                                                geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( new Float32Array( record.uv ), 2 ) );
+
+                                        }
+
+                                        const legacyNormals = decodeFloat32Attr( snapshot.normal );
+                                        if ( legacyNormals && legacyNormals.length >= 3 ) {
+
+                                                geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( legacyNormals, 3 ) );
+
+                                        }
+
+                                        if ( record.index && record.index.data ) {
+
+                                                geometry.setIndex( Array.from( record.index.data ) );
+
+                                        }
+
+                                        if ( record.developableParams ) {
+
+                                                geometry.userData.developableParams = {
+                                                        coneAngle: record.developableParams.coneAngle,
+                                                        height: record.developableParams.height,
+                                                        radius: record.developableParams.radius,
+                                                        inferred: {}
+                                                };
+
+                                        }
+
+                                        if ( record.developableRange ) {
+
+                                                geometry.userData.developableRange = {
+                                                        minR: record.developableRange.minR,
+                                                        maxR: record.developableRange.maxR,
+                                                        outOfRangeCount: record.developableRange.outOfRangeCount
+                                                };
+
+                                        }
+
+                                        if ( record.developableOffset ) {
+
+                                                geometry.userData.developableOffset = {
+                                                        x: record.developableOffset.x,
+                                                        z: record.developableOffset.z
+                                                };
+
+                                        }
+
+                                        if ( ! geometry.getAttribute( 'normal' ) ) {
+
+                                                geometry.computeVertexNormals();
+
+                                        }
+
+                                        return geometry;
+
+                                }
+
+                                async function resolveMeshGeometry( params, kind ) {
+
+                                        const idKey = kind === 'cone' ? 'coneMeshId' : 'patternMeshId';
+                                        const legacyKey = kind === 'cone' ? 'coneMesh' : 'patternMesh';
+
+                                        if ( params[ idKey ] ) {
+
+                                                const record = await getMeshRecord( params[ idKey ] );
+                                                return deserializeBufferGeometry( record );
+
+                                        }
+
+                                        if ( params[ legacyKey ] ) {
+
+                                                const record = migrateLegacyMeshSnapshot( params[ legacyKey ] );
+                                                if ( ! record ) return null;
+
+                                                const id = hashMeshRecord( record );
+                                                queueMeshRecord( id, record );
+                                                params[ idKey ] = id;
+                                                delete params[ legacyKey ];
+                                                return deserializeBufferGeometry( record );
+
+                                        }
+
+                                        return null;
 
                                 }
 
                                 function getParams() {
 
-                                        return {
+                                        const params = {
                                                 applyCuts: knotClippingGroups[ 0 ].enabled,
                                                 ClipShadows: knotClippingGroups[ 0 ].clipShadows,
                                                 showGroundPlane: showGroundPlane,
                                                 autoZoom: autoZoom,
+                                                patternFirst: isConicV2Enabled() ? patternFirst : false,
+                                                coneUsesParametricGeometry: isConicV2Enabled() ? coneUsesParametricGeometry : true,
                                                 wallMaterial: wallMaterial,
                                                 coneAngle: coneAngle,
                                                 coneHeight: coneHeight,
@@ -832,6 +1938,38 @@ scenes.forEach( updateStats );
                                                 cutUpOffset: localPlane1.constant,
                                                 cutDownOffset: localPlane2.constant
                                         };
+
+                                        if ( isConicV2Enabled() && ! coneUsesParametricGeometry ) {
+
+                                                if ( scenes[ 0 ] && scenes[ 0 ].userData.coneMesh ) {
+
+                                                        const coneSnapshot = serializeBufferGeometry( scenes[ 0 ].userData.coneMesh.geometry );
+                                                        if ( coneSnapshot ) {
+
+                                                                const id = hashMeshRecord( coneSnapshot );
+                                                                queueMeshRecord( id, coneSnapshot );
+                                                                params.coneMeshId = id;
+
+                                                        }
+
+                                                }
+
+                                                if ( scenes[ 1 ] && scenes[ 1 ].userData.flattenedMesh ) {
+
+                                                        const patternSnapshot = serializeBufferGeometry( scenes[ 1 ].userData.flattenedMesh.geometry );
+                                                        if ( patternSnapshot ) {
+
+                                                                const id = hashMeshRecord( patternSnapshot );
+                                                                queueMeshRecord( id, patternSnapshot );
+                                                                params.patternMeshId = id;
+
+                                                        }
+
+                                                }
+
+                                        }
+
+                                        return params;
 
                                 }
 
@@ -885,35 +2023,84 @@ scenes.forEach( updateStats );
                                         if ( isRestoring ) return;
 
                                         clearTimeout( autosaveDebounceTimer );
-                                        autosaveDebounceTimer = setTimeout( capturePendingAutosave, AUTOSAVE_DEBOUNCE_MS );
+                                        autosaveDebounceTimer = setTimeout( function () {
+
+                                                capturePendingAutosave().catch( function ( error ) {
+
+                                                        console.warn( 'Autosave failed', error );
+
+                                                } );
+
+                                        }, AUTOSAVE_DEBOUNCE_MS );
 
                                 }
 
-                                function capturePendingAutosave() {
+                                async function capturePendingAutosave() {
 
                                         if ( isRestoring ) return;
+
+                                        let peeledTail = null;
+
+                                        if ( historyAtAutosave ) {
+
+                                                // Branched from the autosave floor — peel the whole pending chain for possible undo restore.
+                                                if ( store.pending.length > 0 ) {
+
+                                                        peeledTail = store.pending.map( snapshotForDisposal ).filter( Boolean );
+
+                                                }
+
+                                                store.pending.length = 0;
+                                                historyAtAutosave = false;
+                                                historyIndex = 0;
+
+                                        } else if ( historyIndex > 0 ) {
+
+                                                // Peel redo futures newer than the restored snapshot into disposal.
+                                                peeledTail = store.pending.slice( 0, historyIndex ).map( snapshotForDisposal ).filter( Boolean );
+                                                store.pending.splice( 0, historyIndex );
+                                                historyIndex = 0;
+
+                                        }
 
                                         const params = getParams();
                                         if ( store.pending[ 0 ] && paramsEqual( store.pending[ 0 ].params, params ) ) return;
                                         if ( ! store.pending[ 0 ] && store.autosave[ 0 ] && paramsEqual( store.autosave[ 0 ].params, params ) ) return;
 
-                                        pushVersion( store.pending, { t: Date.now(), params: params }, PENDING_AUTOSAVE_LIMIT );
-                                        saveStore();
+                                        const peelTimestamp = Date.now();
+                                        pushVersion( store.pending, { t: peelTimestamp, params: params }, PENDING_AUTOSAVE_LIMIT );
+                                        historyIndex = 0;
+                                        historyAtAutosave = false;
+
+                                        if ( peeledTail && peeledTail.length > 0 ) {
+
+                                                await putRedoDisposal( {
+                                                        peelTimestamp: peelTimestamp,
+                                                        peeledAt: peelTimestamp,
+                                                        redoTail: peeledTail
+                                                } );
+
+                                        }
+
+                                        await saveStore();
 
                                 }
 
-                                function flushPendingAutosave() {
+                                async function flushPendingAutosave() {
 
                                         if ( isRestoring ) return;
 
                                         clearTimeout( autosaveDebounceTimer );
                                         autosaveDebounceTimer = null;
-                                        capturePendingAutosave();
+                                        await capturePendingAutosave();
 
                                         if ( store.pending.length === 0 ) return;
 
                                         const snapshot = store.pending[ 0 ];
                                         store.pending.length = 0;
+                                        historyIndex = 0;
+                                        historyAtAutosave = false;
+                                        await clearRedoDisposal();
 
                                         if ( ! store.autosave[ 0 ] || ! paramsEqual( store.autosave[ 0 ].params, snapshot.params ) ) {
 
@@ -921,17 +2108,20 @@ scenes.forEach( updateStats );
 
                                         }
 
-                                        saveStore();
+                                        await saveStore();
                                         refreshPersistenceUI();
 
                                 }
 
-                                function recoverPendingAutosaves() {
+                                async function recoverPendingAutosaves() {
 
                                         if ( store.pending.length === 0 ) return;
 
                                         const snapshot = store.pending[ 0 ];
                                         store.pending.length = 0;
+                                        historyIndex = 0;
+                                        historyAtAutosave = false;
+                                        await clearRedoDisposal();
 
                                         if ( ! store.autosave[ 0 ] || ! paramsEqual( store.autosave[ 0 ].params, snapshot.params ) ) {
 
@@ -942,7 +2132,91 @@ scenes.forEach( updateStats );
 
                                         }
 
-                                        saveStore();
+                                        await saveStore();
+
+                                }
+
+                                async function undoHistory() {
+
+                                        if ( isRestoring ) return;
+
+                                        // Snapshot the live tip before stepping back, unless we're already mid-history.
+                                        if ( historyIndex === 0 && ! historyAtAutosave ) {
+
+                                                await capturePendingAutosave();
+
+                                        }
+
+                                        if ( historyAtAutosave ) return;
+
+                                        // If this tip peeled a redo chain, undoing it restores that chain.
+                                        if ( historyIndex === 0 && store.pending[ 0 ] ) {
+
+                                                const tip = store.pending[ 0 ];
+                                                const disposal = await getRedoDisposal( tip.t );
+
+                                                if ( disposal && Array.isArray( disposal.redoTail ) && disposal.redoTail.length > 0 ) {
+
+                                                        const rest = store.pending.slice( 1 );
+                                                        // Keep the peeled tip as the newest redo target: [tip, ...tail, ...older]
+                                                        store.pending = [ tip ].concat( disposal.redoTail, rest );
+                                                        historyIndex = 1 + disposal.redoTail.length;
+                                                        historyAtAutosave = false;
+                                                        await deleteRedoDisposal( tip.t );
+                                                        await saveStore();
+
+                                                        if ( historyIndex >= store.pending.length ) {
+
+                                                                historyIndex = Math.max( 0, store.pending.length - 1 );
+
+                                                        }
+
+                                                        if ( store.pending[ historyIndex ] ) {
+
+                                                                await applyParams( store.pending[ historyIndex ].params );
+                                                                return;
+
+                                                        }
+
+                                                }
+
+                                        }
+
+                                        if ( store.pending.length === 0 || store.pending.length === 1 || historyIndex >= store.pending.length - 1 ) {
+
+                                                if ( ! store.autosave[ 0 ] ) return;
+
+                                                historyAtAutosave = true;
+                                                await applyParams( store.autosave[ 0 ].params );
+                                                return;
+
+                                        }
+
+                                        historyIndex ++;
+                                        historyAtAutosave = false;
+                                        await applyParams( store.pending[ historyIndex ].params );
+
+                                }
+
+                                async function redoHistory() {
+
+                                        if ( isRestoring ) return;
+
+                                        if ( historyAtAutosave ) {
+
+                                                if ( store.pending.length === 0 ) return;
+
+                                                historyAtAutosave = false;
+                                                historyIndex = store.pending.length - 1;
+                                                await applyParams( store.pending[ historyIndex ].params );
+                                                return;
+
+                                        }
+
+                                        if ( historyIndex <= 0 ) return;
+
+                                        historyIndex --;
+                                        await applyParams( store.pending[ historyIndex ].params );
 
                                 }
 
@@ -950,8 +2224,22 @@ scenes.forEach( updateStats );
 
                                         if ( autosaveFlushTimer !== null ) return;
 
-                                        autosaveFlushTimer = setInterval( flushPendingAutosave, AUTOSAVE_FLUSH_MS );
-                                        window.addEventListener( 'beforeunload', flushPendingAutosave );
+                                        autosaveFlushTimer = setInterval( function () {
+
+                                                flushPendingAutosave().catch( function ( error ) {
+
+                                                        console.warn( 'Autosave flush failed', error );
+
+                                                } );
+
+                                        }, AUTOSAVE_FLUSH_MS );
+
+                                        window.addEventListener( 'beforeunload', function () {
+
+                                                // Best-effort: kick off flush; IndexedDB may not finish before unload.
+                                                flushPendingAutosave();
+
+                                        } );
 
                                 }
 
@@ -968,12 +2256,37 @@ scenes.forEach( updateStats );
 
                                         set applyCuts( v ) {
 
+                                                if ( isRestoring ) {
+
+                                                        knotClippingGroups.forEach( function ( group ) {
+
+                                                                group.enabled = v;
+
+                                                        } );
+                                                        return;
+
+                                                }
+
                                                 knotClippingGroups.forEach( function ( group ) {
 
                                                         group.enabled = v;
 
                                                 } );
-                                                updateGeometries();
+
+                                                if ( coneUsesParametricGeometry && ! patternFirst ) {
+
+                                                        // Parametric cone: cuts are plane-clipped on the full cone and baked into the flat unroll.
+                                                        updateGeometries();
+
+                                                } else {
+
+                                                        // Buffer mesh already carries the cut topology — only toggle clipping planes.
+                                                        syncClippingPlanesToWorld();
+                                                        scenes.forEach( updateStats );
+                                                        requestRender();
+
+                                                }
+
                                                 scheduleAutosave();
 
                                         },
@@ -1023,6 +2336,18 @@ scenes.forEach( updateStats );
 
                                         },
 
+                                        get patternFirst() {
+
+                                                return patternFirst;
+
+                                        },
+
+                                        set patternFirst( v ) {
+
+                                                setPatternFirst( !! v );
+
+                                        },
+
                                         get wallMaterial() {
 
                                                 return wallMaterial;
@@ -1047,7 +2372,8 @@ scenes.forEach( updateStats );
                                         set 'coneAngle'( v ) {
 
                                                 coneAngle = v;
-                                                updateGeometries();
+                                                if ( isRestoring ) return;
+                                                updateGeometries( patternFirst ? {} : { editCone: true } );
                                                 ensureConeFitsInView();
                                                 scheduleAutosave();
 
@@ -1062,7 +2388,8 @@ scenes.forEach( updateStats );
                                         set 'coneHeight'( v ) {
 
                                                 coneHeight = v;
-                                                updateGeometries();
+                                                if ( isRestoring ) return;
+                                                updateGeometries( patternFirst ? {} : { editCone: true } );
                                                 ensureConeFitsInView();
                                                 scheduleAutosave();
 
@@ -1076,9 +2403,16 @@ scenes.forEach( updateStats );
 
                                         set 'cutAngle'( v ) {
 
+                                                if ( isRestoring ) {
+
+                                                        cutAngle = v;
+                                                        return;
+
+                                                }
+
                                                 const wasLevelled = areCutPlanesLevelled();
                                                 cutAngle = v;
-                                                updateGeometries();
+                                                updateGeometries( patternFirst ? {} : { editPattern: true } );
                                                 if ( wasLevelled ) levelCutPlanesToGround();
                                                 scheduleAutosave();
 
@@ -1093,7 +2427,8 @@ scenes.forEach( updateStats );
                                         set 'cutUpOffset'( v ) {
 
                                                 localPlane1.constant = v;
-                                                updateGeometries();
+                                                if ( isRestoring ) return;
+                                                updateGeometries( patternFirst ? {} : { editPattern: true } );
                                                 scheduleAutosave();
 
                                         },
@@ -1107,19 +2442,137 @@ scenes.forEach( updateStats );
                                         set 'cutDownOffset'( v ) {
 
                                                 localPlane2.constant = v;
-                                                updateGeometries();
+                                                if ( isRestoring ) return;
+                                                updateGeometries( patternFirst ? {} : { editPattern: true } );
                                                 scheduleAutosave();
 
                                         }
 
                                 };
 
+                                function updateSwapButtonState() {
+
+                                        if ( ! swapPanelsButton ) return;
+
+                                        const enabled = isConicV2Enabled();
+                                        swapPanelsButton.style.display = enabled ? '' : 'none';
+                                        if ( ! enabled ) {
+
+                                                swapPanelsButton.classList.remove( 'active' );
+                                                swapPanelsButton.setAttribute( 'aria-pressed', 'false' );
+                                                return;
+
+                                        }
+
+                                        swapPanelsButton.classList.toggle( 'active', patternFirst );
+                                        swapPanelsButton.setAttribute( 'aria-pressed', patternFirst ? 'true' : 'false' );
+                                        swapPanelsButton.title = patternFirst
+                                                ? 'Cone first — modify 3D cone and flatten'
+                                                : 'Pattern first — modify flat shape and lift to 3D cone';
+
+                                }
+
+                                function applyPanelOrder() {
+
+                                        const coneItem = scenes[ 0 ].userData.listItem;
+                                        const flatItem = scenes[ 1 ].userData.listItem;
+                                        if ( ! coneItem || ! flatItem ) return;
+
+                                        if ( patternFirst && isConicV2Enabled() ) {
+
+                                                panelsRow.appendChild( flatItem );
+                                                panelsRow.appendChild( swapPanelsButton );
+                                                panelsRow.appendChild( coneItem );
+
+                                        } else {
+
+                                                panelsRow.appendChild( coneItem );
+                                                panelsRow.appendChild( swapPanelsButton );
+                                                panelsRow.appendChild( flatItem );
+
+                                        }
+
+                                        requestRender();
+
+                                }
+
+                                function setPatternFirst( next, options = {} ) {
+
+                                        if ( next && ! isConicV2Enabled() ) next = false;
+
+                                        const changed = patternFirst !== !! next;
+                                        patternFirst = !! next;
+                                        applyPanelOrder();
+                                        updateSwapButtonState();
+                                        updateConicEditorsMode();
+
+                                        if ( changed && patternFirst && ! options.skipGeometryUpdate ) {
+
+                                                // Keep the current flat pattern; fit and lift the unique matching cone.
+                                                updateGeometries();
+                                                if ( autoZoom ) ensureConeFitsInView();
+
+                                        }
+
+                                        if ( ! options.skipAutosave ) scheduleAutosave();
+
+                                }
+
+                                function updateConicEditorsMode() {
+
+                                        const editors = [
+                                                conicEditors.applyCuts,
+                                                conicEditors.coneAngle,
+                                                conicEditors.coneHeight,
+                                                conicEditors.cutAngle,
+                                                conicEditors.cutUpOffset,
+                                                conicEditors.cutDownOffset
+                                        ];
+
+                                        for ( let i = 0; i < editors.length; i ++ ) {
+
+                                                const editor = editors[ i ];
+                                                if ( ! editor ) continue;
+                                                if ( patternFirst ) editor.hide();
+                                                else editor.show();
+
+                                        }
+
+                                }
+
+                                function applyFittedConeToState( fitted ) {
+
+                                        const prevRestoring = isRestoring;
+                                        isRestoring = true;
+                                        coneAngle = fitted.coneAngle;
+                                        coneHeight = fitted.height;
+                                        coneRadius = fitted.radius;
+
+                                        if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( coneAngle );
+                                        if ( conicEditors.coneHeight ) conicEditors.coneHeight.setValue( coneHeight );
+
+                                        isRestoring = prevRestoring;
+
+                                }
+
+                                if ( swapPanelsButton ) {
+
+                                        swapPanelsButton.addEventListener( 'click', function () {
+
+                                                setPatternFirst( ! patternFirst );
+
+                                        } );
+
+                                }
+
+                                updateSwapButtonState();
                                 conicEditors.applyCuts = folderConic.add( propsConic, 'applyCuts' );
                                 conicEditors.coneAngle = folderConic.add( propsConic, 'coneAngle', 0.1, Math.PI / 2 - 0.1 );
                                 conicEditors.coneHeight = folderConic.add( propsConic, 'coneHeight', 0.5, 40 );
                                 conicEditors.cutAngle = folderConic.add( propsConic, 'cutAngle', 0, Math.PI );
                                 conicEditors.cutUpOffset = folderConic.add( propsConic, 'cutUpOffset', - 3, 3 );
                                 conicEditors.cutDownOffset = folderConic.add( propsConic, 'cutDownOffset', - 3, 3 );
+                                updateConicEditorsMode();
 
                                 conicEditors.ClipShadows = folderScene.add( propsConic, 'ClipShadows' );
                                 conicEditors.showGroundPlane = folderScene.add( propsConic, 'showGroundPlane' );
@@ -1223,10 +2676,54 @@ scenes.forEach( updateStats );
 
                                 window.addEventListener( 'keydown', function ( event ) {
 
-                                        if ( event.key !== 'Escape' || ! transformMode ) return;
-                                        if ( event.target && ( event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable ) ) return;
+                                        const target = event.target;
+                                        if ( target ) {
 
-                                        setTransformMode( null );
+                                                const tag = target.tagName;
+                                                if ( tag === 'TEXTAREA' || target.isContentEditable ) return;
+
+                                                if ( tag === 'INPUT' ) {
+
+                                                        const type = ( target.type || 'text' ).toLowerCase();
+                                                        // Keep native undo for text fields (e.g. save name); allow history undo on number/range/etc.
+                                                        if ( type === 'text' || type === 'search' || type === 'password' || type === 'email' || type === 'url' || type === 'tel' ) return;
+
+                                                }
+
+                                        }
+
+                                        if ( event.key === 'Escape' && transformMode ) {
+
+                                                setTransformMode( null );
+                                                return;
+
+                                        }
+
+                                        const mod = event.metaKey || event.ctrlKey;
+                                        if ( ! mod ) return;
+
+                                        const key = event.key.toLowerCase();
+                                        if ( key !== 'z' ) return;
+
+                                        event.preventDefault();
+
+                                        if ( event.shiftKey ) {
+
+                                                redoHistory().catch( function ( error ) {
+
+                                                        console.warn( 'Redo failed', error );
+
+                                                } );
+
+                                        } else {
+
+                                                undoHistory().catch( function ( error ) {
+
+                                                        console.warn( 'Undo failed', error );
+
+                                                } );
+
+                                        }
 
                                 } );
 
@@ -1256,7 +2753,7 @@ scenes.forEach( updateStats );
 
                                 }
 
-                                function getConeProjectedExtent( mesh, camera ) {
+                                function getMeshProjectedExtent( mesh, camera ) {
 
                                         const position = mesh.geometry.getAttribute( 'position' );
                                         if ( ! position || position.count === 0 ) return 0;
@@ -1277,6 +2774,39 @@ scenes.forEach( updateStats );
 
                                 }
 
+                                function fitMeshInView( scene, mesh ) {
+
+                                        if ( ! mesh || ! mesh.geometry ) return;
+
+                                        const camera = scene.userData.camera;
+                                        const controls = scene.userData.controls;
+                                        if ( ! camera || ! controls ) return;
+
+                                        const maxExtent = getMeshProjectedExtent( mesh, camera );
+                                        if ( ! Number.isFinite( maxExtent ) || maxExtent <= AUTO_ZOOM_FILL ) return;
+
+                                        const currentDistance = camera.position.distanceTo( controls.target );
+                                        if ( currentDistance <= 0 ) return;
+
+                                        _fitDir.copy( camera.position ).sub( controls.target ).normalize();
+
+                                        // One corrective step using true mesh extent (not the AABB), then re-check once
+                                        let distance = Math.min( currentDistance * ( maxExtent / AUTO_ZOOM_FILL ), controls.maxDistance );
+                                        camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
+                                        camera.updateMatrixWorld();
+
+                                        const extentAfter = getMeshProjectedExtent( mesh, camera );
+                                        if ( Number.isFinite( extentAfter ) && extentAfter > AUTO_ZOOM_FILL && distance < controls.maxDistance ) {
+
+                                                distance = Math.min( distance * ( extentAfter / AUTO_ZOOM_FILL ), controls.maxDistance );
+                                                camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
+
+                                        }
+
+                                        controls.update();
+
+                                }
+
                                 function ensureConeFitsInView() {
 
                                         if ( ! autoZoom ) return;
@@ -1284,71 +2814,220 @@ scenes.forEach( updateStats );
                                         for ( let i = 0; i < scenes.length; i ++ ) {
 
                                                 const scene = scenes[ i ];
-                                                const mesh = scene.userData.coneMesh;
-                                                if ( ! mesh ) continue;
-
-                                                const camera = scene.userData.camera;
-                                                const controls = scene.userData.controls;
-
-                                                const maxExtent = getConeProjectedExtent( mesh, camera );
-                                                if ( ! Number.isFinite( maxExtent ) || maxExtent <= AUTO_ZOOM_FILL ) return;
-
-                                                const currentDistance = camera.position.distanceTo( controls.target );
-                                                if ( currentDistance <= 0 ) return;
-
-                                                _fitDir.copy( camera.position ).sub( controls.target ).normalize();
-
-                                                // One corrective step using true mesh extent (not the AABB), then re-check once
-                                                let distance = Math.min( currentDistance * ( maxExtent / AUTO_ZOOM_FILL ), controls.maxDistance );
-                                                camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
-                                                camera.updateMatrixWorld();
-
-                                                const extentAfter = getConeProjectedExtent( mesh, camera );
-                                                if ( Number.isFinite( extentAfter ) && extentAfter > AUTO_ZOOM_FILL && distance < controls.maxDistance ) {
-
-                                                        distance = Math.min( distance * ( extentAfter / AUTO_ZOOM_FILL ), controls.maxDistance );
-                                                        camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
-
-                                                }
-
-                                                controls.update();
-                                                requestRender();
-                                                return;
+                                                fitMeshInView( scene, scene.userData.coneMesh );
+                                                fitMeshInView( scene, scene.userData.flattenedMesh );
 
                                         }
 
+                                        requestRender();
+
                                 }
 
-                                function updateGeometries() {
+                                function updateGeometries( options = {} ) {
 
                                         coneRadius = Math.tan( coneAngle ) * coneHeight;
                                         updatePlaneNormals();
                                         syncClippingPlanesToWorld();
-                                        const newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
-                                        // Flattening uses local (rig-space) planes only — cone pose must not affect the unrolled pattern.
-                                        const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, knotClippingGroups[ 0 ].enabled );
 
-                                        scenes.forEach( function ( scene ) {
+                                        const applyCuts = knotClippingGroups[ 0 ].enabled;
+                                        const coneParams = {
+                                                coneAngle: coneAngle,
+                                                height: coneHeight,
+                                                radius: coneRadius
+                                        };
+                                        const coneMesh = scenes[ 0 ].userData.coneMesh;
+                                        const flatMesh = scenes[ 1 ] && scenes[ 1 ].userData.flattenedMesh;
+                                        const keepConeBuffer = !! options.keepConeBuffer && coneMesh && coneMesh.geometry && ! coneUsesParametricGeometry;
+                                        const keepPatternBuffer = !! options.keepPatternBuffer && flatMesh && flatMesh.geometry;
 
-                                                if ( scene.userData.coneMesh ) {
+                                        let newConeGeometry = null;
+                                        let newFlattenedGeometry = null;
 
-                                                        scene.userData.coneMesh.geometry.dispose();
-                                                        scene.userData.coneMesh.geometry = newConeGeometry;
-                                                        scene.userData.coneMesh.rotation.z = Math.PI;
+                                        if ( keepConeBuffer || keepPatternBuffer ) {
+
+                                                newConeGeometry = keepConeBuffer ? coneMesh.geometry : null;
+                                                newFlattenedGeometry = keepPatternBuffer ? flatMesh.geometry : null;
+
+                                                if ( ! newFlattenedGeometry && newConeGeometry ) {
+
+                                                        newFlattenedGeometry = createFlattenedGeometryFromConeBuffer( newConeGeometry, coneParams );
 
                                                 }
 
-                                                if ( scene.userData.flattenedMesh ) {
+                                                if ( ! newConeGeometry && newFlattenedGeometry ) {
 
-                                                        scene.userData.flattenedMesh.geometry.dispose();
-                                                        scene.userData.flattenedMesh.geometry = flattenedGeometry;
+                                                        newConeGeometry = createConeGeometryFromPattern( newFlattenedGeometry, coneParams );
+                                                        if ( newConeGeometry ) coneUsesParametricGeometry = false;
+
+                                                }
+
+                                                if ( newFlattenedGeometry ) {
+
+                                                        lastInverseDiagnostics = measureFlatConeRoundTrip( newFlattenedGeometry, coneParams );
+
+                                                }
+
+                                        } else if ( patternFirst ) {
+
+                                                // Pattern is frozen — fit the unique cone from flat (R, α) → (r, φ).
+                                                if ( flatMesh && flatMesh.geometry && flatMesh.geometry.getAttribute( 'position' )
+                                                        && flatMesh.geometry.getAttribute( 'position' ).count >= 3 ) {
+
+                                                        newFlattenedGeometry = flatMesh.geometry;
+
+                                                } else {
+
+                                                        newFlattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, applyCuts );
+
+                                                }
+
+                                                const fitted = fitConeFromFlatGeometry( newFlattenedGeometry );
+                                                applyFittedConeToState( fitted );
+                                                const liftParams = {
+                                                        coneAngle: fitted.coneAngle,
+                                                        height: fitted.height,
+                                                        radius: fitted.radius,
+                                                        useFlatPositions: true
+                                                };
+                                                newConeGeometry = createConeGeometryFromPattern( newFlattenedGeometry, liftParams );
+                                                if ( newConeGeometry ) {
+
+                                                        coneUsesParametricGeometry = false;
+                                                        lastInverseDiagnostics = measureFlatConeRoundTrip( newFlattenedGeometry, liftParams );
+
+                                                } else {
+
+                                                        newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                                        coneUsesParametricGeometry = true;
+                                                        lastInverseDiagnostics = null;
+
+                                                }
+
+                                        } else if ( options.editPattern && ! coneUsesParametricGeometry ) {
+
+                                                // Cone-first buffer: cut / section params reshape the flat pattern, then re-lift.
+                                                newFlattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, applyCuts );
+                                                newConeGeometry = createConeGeometryFromPattern( newFlattenedGeometry, coneParams );
+                                                if ( newConeGeometry ) {
+
+                                                        lastInverseDiagnostics = measureFlatConeRoundTrip( newFlattenedGeometry, coneParams );
+
+                                                } else {
+
+                                                        newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                                        newFlattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, applyCuts );
+                                                        coneUsesParametricGeometry = true;
+                                                        lastInverseDiagnostics = null;
+
+                                                }
+
+                                        } else if ( coneUsesParametricGeometry ) {
+
+                                                // Cone-first parametric (including cut edits): ConeGeometry + clipping; cuts bake into the flat.
+                                                newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                                newFlattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, applyCuts );
+                                                lastInverseDiagnostics = null;
+
+                                        } else {
+
+                                                // Cone-first buffer + cone size edit: remesh the 3D buffer, then unroll it.
+                                                const sourceGeometry = coneMesh && coneMesh.geometry;
+                                                const sourcePositions = sourceGeometry && sourceGeometry.getAttribute( 'position' );
+                                                const sourceUvs = sourceGeometry && sourceGeometry.getAttribute( 'uv' );
+                                                const canRemesh = sourcePositions && sourceUvs && sourcePositions.count >= 3;
+
+                                                if ( canRemesh ) {
+
+                                                        updateLiftedConeGeometry( sourceGeometry, coneParams );
+                                                        newConeGeometry = sourceGeometry;
+                                                        newFlattenedGeometry = createFlattenedGeometryFromConeBuffer( newConeGeometry, coneParams );
+
+                                                }
+
+                                                if ( ! newConeGeometry || ! newFlattenedGeometry ) {
+
+                                                        newConeGeometry = new THREE.ConeGeometry( coneRadius, coneHeight, coneSegments, 1, true );
+                                                        newFlattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, applyCuts );
+                                                        coneUsesParametricGeometry = true;
+                                                        lastInverseDiagnostics = null;
+
+                                                } else {
+
+                                                        lastInverseDiagnostics = measureFlatConeRoundTrip( newFlattenedGeometry, coneParams );
+
+                                                }
+
+                                        }
+
+                                        scenes.forEach( function ( scene ) {
+
+                                                if ( scene.userData.coneMesh && newConeGeometry ) {
+
+                                                        const mesh = scene.userData.coneMesh;
+                                                        if ( mesh.geometry !== newConeGeometry ) {
+
+                                                                mesh.geometry.dispose();
+                                                                mesh.geometry = newConeGeometry;
+
+                                                        }
+
+                                                        mesh.rotation.z = Math.PI;
+
+                                                }
+
+                                                if ( scene.userData.flattenedMesh && newFlattenedGeometry ) {
+
+                                                        const mesh = scene.userData.flattenedMesh;
+                                                        if ( mesh.geometry !== newFlattenedGeometry ) {
+
+                                                                mesh.geometry.dispose();
+                                                                mesh.geometry = newFlattenedGeometry;
+
+                                                        }
 
                                                 }
 
                                         } );
 
                                         scenes.forEach( updateStats );
-                                        requestRender();
+                                        updateGeometryModeBadge();
+                                        if ( autoZoom ) ensureConeFitsInView();
+                                        else requestRender();
+
+                                }
+
+                                function updateGeometryModeBadge() {
+
+                                        if ( ! geometryModeBadge ) return;
+
+                                        if ( ! isConicV2Enabled() ) {
+
+                                                geometryModeBadge.style.display = 'none';
+                                                return;
+
+                                        }
+
+                                        geometryModeBadge.style.display = '';
+
+                                        if ( coneUsesParametricGeometry ) {
+
+                                                geometryModeBadge.textContent = 'ConeGeometry';
+                                                geometryModeBadge.classList.remove( 'is-buffer' );
+                                                geometryModeBadge.title = 'Parametric cone is source — flat pattern is unrolled from the cone formula';
+
+                                        } else if ( patternFirst ) {
+
+                                                geometryModeBadge.textContent = 'BufferGeometry';
+                                                geometryModeBadge.classList.add( 'is-buffer' );
+                                                geometryModeBadge.title = 'Pattern-first — flat pattern fixed; 3D cone is fitted from (R, α) → (r, φ)';
+
+                                        } else {
+
+                                                geometryModeBadge.textContent = 'BufferGeometry';
+                                                geometryModeBadge.classList.add( 'is-buffer' );
+                                                geometryModeBadge.title = 'Cone-first buffer — cone size remeshes 3D; cut params rebuild the flat pattern and re-lift';
+
+                                        }
 
                                 }
 
@@ -1369,7 +3048,7 @@ scenes.forEach( updateStats );
 
                                 }
 
-                                function applyParams( params ) {
+                                async function applyParams( params ) {
 
                                         if ( ! params ) return;
 
@@ -1408,6 +3087,24 @@ scenes.forEach( updateStats );
 
                                                 if ( 'autoZoom' in params ) autoZoom = params.autoZoom;
 
+                                                if ( isConicV2Enabled() ) {
+
+                                                        if ( 'patternFirst' in params ) {
+
+                                                                setPatternFirst( params.patternFirst, { skipGeometryUpdate: true, skipAutosave: true } );
+
+                                                        } else if ( 'rebuildFromPattern' in params && params.rebuildFromPattern ) {
+
+                                                                setPatternFirst( true, { skipGeometryUpdate: true, skipAutosave: true } );
+
+                                                        }
+
+                                                } else {
+
+                                                        setPatternFirst( false, { skipGeometryUpdate: true, skipAutosave: true } );
+
+                                                }
+
                                                 if ( 'wallMaterial' in params ) {
 
                                                         const next = params.wallMaterial === 'duck' ? 'glass' : params.wallMaterial;
@@ -1427,7 +3124,59 @@ scenes.forEach( updateStats );
                                                 if ( 'cutUpOffset' in params ) localPlane1.constant = params.cutUpOffset;
                                                 if ( 'cutDownOffset' in params ) localPlane2.constant = params.cutDownOffset;
 
-                                                updateGeometries();
+                                                let restoredConeMesh = false;
+                                                let restoredPatternMesh = false;
+
+                                                if ( isConicV2Enabled() ) {
+
+                                                        if ( 'coneUsesParametricGeometry' in params ) {
+
+                                                                coneUsesParametricGeometry = !! params.coneUsesParametricGeometry;
+
+                                                        }
+
+                                                        const restoredConeGeometry = await resolveMeshGeometry( params, 'cone' );
+
+                                                        if ( restoredConeGeometry && scenes[ 0 ] && scenes[ 0 ].userData.coneMesh ) {
+
+                                                                const mesh = scenes[ 0 ].userData.coneMesh;
+                                                                mesh.geometry.dispose();
+                                                                mesh.geometry = restoredConeGeometry;
+                                                                coneUsesParametricGeometry = false;
+                                                                restoredConeMesh = true;
+
+                                                        } else if ( patternFirst ) {
+
+                                                                coneUsesParametricGeometry = false;
+
+                                                        } else {
+
+                                                                // Buffer flag/mesh missing — stay on parametric cone-first.
+                                                                coneUsesParametricGeometry = true;
+
+                                                        }
+
+                                                        const restoredPatternGeometry = await resolveMeshGeometry( params, 'pattern' );
+
+                                                        if ( restoredPatternGeometry && scenes[ 1 ] && scenes[ 1 ].userData.flattenedMesh ) {
+
+                                                                const mesh = scenes[ 1 ].userData.flattenedMesh;
+                                                                mesh.geometry.dispose();
+                                                                mesh.geometry = restoredPatternGeometry;
+                                                                restoredPatternMesh = true;
+
+                                                        }
+
+                                                } else {
+
+                                                        coneUsesParametricGeometry = true;
+
+                                                }
+
+                                                updateGeometries( {
+                                                        keepConeBuffer: restoredConeMesh,
+                                                        keepPatternBuffer: restoredPatternMesh
+                                                } );
                                                 if ( wasLevelled ) levelCutPlanesToGround();
                                                 if ( sizeChanged ) ensureConeFitsInView();
                                                 syncConicEditors();
@@ -1441,15 +3190,42 @@ scenes.forEach( updateStats );
                                 }
 
                                 store = loadStore();
-                                recoverPendingAutosaves();
-                                if ( store.autosave[ 0 ] ) applyParams( store.autosave[ 0 ].params );
+                                await loadRedoDisposalCache();
+                                await recoverPendingAutosaves();
+                                if ( store.autosave.length ) {
+
+                                        let restoreEntry = store.autosave[ 0 ];
+
+                                        if ( ! isConicV2Enabled() ) {
+
+                                                restoreEntry = store.autosave.find( function ( entry ) {
+
+                                                        return ! isBufferGeometrySnapshot( entry && entry.params );
+
+                                                } ) || null;
+
+                                        }
+
+                                        if ( restoreEntry ) await applyParams( restoreEntry.params );
+
+                                }
+
+                                // Migrate legacy inline meshes into IndexedDB and keep only ids in localStorage.
+                                if ( store.autosave[ 0 ] ) {
+
+                                        store.autosave[ 0 ] = { t: store.autosave[ 0 ].t || Date.now(), params: getParams() };
+
+                                }
+
+                                store.pending.length = 0;
+                                await saveStore();
 
                                 const folderPersist = gui.addFolder( 'Persistence' );
                                 const propsPersist = {
                                         name: '',
                                         load: EMPTY_SELECT,
                                         version: EMPTY_SELECT,
-                                        Save() {
+                                        async Save() {
 
                                                 const name = propsPersist.name.trim();
                                                 if ( ! name || name === AUTOSAVE_LABEL || name === EMPTY_SELECT ) return;
@@ -1461,19 +3237,20 @@ scenes.forEach( updateStats );
                                                 }
 
                                                 pushVersion( store.named[ name ].versions, { t: Date.now(), params: getParams() } );
-                                                saveStore();
+                                                await saveStore();
                                                 propsPersist.load = name;
                                                 refreshPersistenceUI( true );
 
                                         },
-                                        Load() {
+                                        async Load() {
 
                                                 const loadName = propsPersist.load;
                                                 const versions = getVersionsForLoad( loadName );
-                                                const index = parseSnapshotIndex( propsPersist.version, versions.length );
-                                                if ( index < 0 || ! versions[ index ] ) return;
+                                                const index = parseInt( propsPersist.version, 10 );
+                                                if ( ! Number.isFinite( index ) || index < 0 || ! versions[ index ] ) return;
+                                                if ( ! isConicV2Enabled() && isBufferGeometrySnapshot( versions[ index ].params ) ) return;
 
-                                                applyParams( versions[ index ].params );
+                                                await applyParams( versions[ index ].params );
 
                                                 if ( loadName === AUTOSAVE_LABEL ) {
 
@@ -1486,7 +3263,53 @@ scenes.forEach( updateStats );
                                                 }
 
                                         },
-                                        Delete() {
+                                        async Reset() {
+
+                                                isRestoring = true;
+
+                                                try {
+
+                                                        setPatternFirst( false, { skipGeometryUpdate: true, skipAutosave: true } );
+                                                        setTransformMode( null );
+
+                                                        coneUsesParametricGeometry = true;
+                                                        lastInverseDiagnostics = null;
+                                                        coneAngle = 0.4;
+                                                        coneHeight = 5;
+                                                        coneRadius = Math.tan( coneAngle ) * coneHeight;
+                                                        cutAngle = 0.0;
+                                                        localPlane1.constant = 2.0;
+                                                        localPlane2.constant = 2.0;
+                                                        updatePlaneNormals();
+
+                                                        knotClippingGroups.forEach( function ( group ) {
+
+                                                                group.enabled = true;
+                                                                group.clipShadows = true;
+                                                                group.position.set( 0, 0, 0 );
+                                                                group.rotation.set( 0, 0, 0 );
+                                                                group.quaternion.identity();
+                                                                group.scale.set( 1, 1, 1 );
+                                                                group.updateMatrixWorld( true );
+
+                                                        } );
+
+                                                        syncClippingPlanesToWorld();
+                                                        updateGeometries();
+                                                        updateConicEditorsMode();
+                                                        syncConicEditors();
+
+                                                } finally {
+
+                                                        isRestoring = false;
+
+                                                }
+
+                                                if ( autoZoom ) ensureConeFitsInView();
+                                                scheduleAutosave();
+
+                                        },
+                                        async Delete() {
 
                                                 const name = propsPersist.load;
                                                 if ( ! name || name === EMPTY_SELECT ) return;
@@ -1495,6 +3318,9 @@ scenes.forEach( updateStats );
 
                                                         store.autosave = [];
                                                         store.pending = [];
+                                                        historyIndex = 0;
+                                                        historyAtAutosave = false;
+                                                        await clearRedoDisposal();
 
                                                 } else if ( store.named[ name ] ) {
 
@@ -1506,7 +3332,7 @@ scenes.forEach( updateStats );
 
                                                 }
 
-                                                saveStore();
+                                                await saveStore();
                                                 propsPersist.load = EMPTY_SELECT;
                                                 propsPersist.version = EMPTY_SELECT;
                                                 refreshPersistenceUI();
@@ -1519,7 +3345,19 @@ scenes.forEach( updateStats );
                                 persistEditors.load = folderPersist.add( propsPersist, 'load', [ EMPTY_SELECT, AUTOSAVE_LABEL ] ).name( 'load save' );
                                 persistEditors.version = folderPersist.add( propsPersist, 'version', [ EMPTY_SELECT ] );
                                 persistEditors.Load = folderPersist.add( propsPersist, 'Load' );
+                                persistEditors.Reset = folderPersist.add( propsPersist, 'Reset' );
                                 persistEditors.Delete = folderPersist.add( propsPersist, 'Delete' );
+
+                                const persistenceSeparator = document.createElement( 'hr' );
+                                persistenceSeparator.className = 'persistence-separator';
+                                persistenceSeparator.setAttribute( 'aria-hidden', 'true' );
+                                const loadRow = persistEditors.Load.domElement.closest( '.list-item-wrapper' );
+                                const resetRow = persistEditors.Reset.domElement.closest( '.list-item-wrapper' );
+                                if ( loadRow && resetRow && resetRow.parentNode ) {
+
+                                        resetRow.parentNode.insertBefore( persistenceSeparator, resetRow );
+
+                                }
 
                                 persistEditors.load.onChange( function () {
 
@@ -1537,14 +3375,54 @@ scenes.forEach( updateStats );
                                 function refreshVersionSelect( selectLatest = false ) {
 
                                         const versions = getVersionsForLoad( propsPersist.load );
-                                        const options = versions.length
-                                                ? versions.map( ( entry, index ) => formatSnapshotLabel( entry, index, versions.length ) )
+                                        const visible = [];
+
+                                        for ( let i = 0; i < versions.length; i ++ ) {
+
+                                                const entry = versions[ i ];
+                                                if ( ! isConicV2Enabled() && isBufferGeometrySnapshot( entry && entry.params ) ) continue;
+                                                visible.push( {
+                                                        value: String( i ),
+                                                        label: formatSnapshotLabel( entry, i, versions.length )
+                                                } );
+
+                                        }
+
+                                        const options = visible.length
+                                                ? visible.map( function ( item ) {
+
+                                                        return item.value;
+
+                                                } )
                                                 : [ EMPTY_SELECT ];
-                                        const selected = ( ! selectLatest && options.includes( propsPersist.version ) )
+                                        const labelsByValue = {};
+                                        visible.forEach( function ( item ) {
+
+                                                labelsByValue[ item.value ] = item.label;
+
+                                        } );
+
+                                        if ( ! persistEditors.version ) return;
+
+                                        const editor = persistEditors.version;
+                                        editor.options = options;
+                                        const select = editor.select;
+                                        select.innerHTML = '';
+
+                                        options.forEach( function ( opt ) {
+
+                                                const optionEl = document.createElement( 'option' );
+                                                optionEl.value = opt;
+                                                optionEl.textContent = opt === EMPTY_SELECT ? EMPTY_SELECT : ( labelsByValue[ opt ] || opt );
+                                                select.appendChild( optionEl );
+
+                                        } );
+
+                                        const preferred = ( ! selectLatest && options.includes( propsPersist.version ) )
                                                 ? propsPersist.version
                                                 : options[ 0 ];
-                                        propsPersist.version = selected;
-                                        replaceSelectOptions( persistEditors.version, options, selected );
+                                        propsPersist.version = preferred;
+                                        editor.setValue( preferred );
 
                                 }
 
@@ -1738,13 +3616,39 @@ scenes.forEach( updateStats );
 
                                         if ( scene.userData.coneMesh ) {
 
-                                                const localPlanes = getConeLocalClippingPlanes( localPlane1, localPlane2 );
-                                                const clippedConeGeometry = createClippedConeGeometry( coneRadius, coneHeight, coneSegments, localPlane1, localPlane2 );
-                                                const size = computeBoundingBoxSizes( clippedConeGeometry );
-                                                const maxAngle = computeSurfacePlaneMaxAngle( clippedConeGeometry, localPlanes[ 0 ], localPlanes[ 1 ] );
-                                                text = 'Oriented bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z ) + '\n';
-                                                text += 'Max surface-plane angle: ' + ( ( maxAngle * 180 / Math.PI ).toFixed( 1 ) ) + '°';
-                                                clippedConeGeometry.dispose();
+                                                if ( ( patternFirst || ! coneUsesParametricGeometry ) && lastInverseDiagnostics ) {
+
+                                                        const d = lastInverseDiagnostics;
+                                                        const triangles = scene.userData.coneMesh.geometry.index
+                                                                ? scene.userData.coneMesh.geometry.index.count / 3
+                                                                : scene.userData.coneMesh.geometry.getAttribute( 'position' ).count / 3;
+                                                        text = 'Inverse mesh triangles: ' + triangles + '\n';
+                                                        text += 'Round-trip max error: ' + d.maxError.toFixed( 6 ) + '\n';
+                                                        text += 'r range: ' + d.minR.toFixed( 3 ) + ' … ' + d.maxR.toFixed( 3 );
+                                                        if ( patternFirst && d.params ) {
+
+                                                                text += '\nFitted α: ' + ( d.params.coneAngle * 180 / Math.PI ).toFixed( 2 ) + '°';
+                                                                text += '  r_base: ' + d.params.radius.toFixed( 3 );
+                                                                text += '  h: ' + d.params.height.toFixed( 3 );
+
+                                                        }
+                                                        if ( d.outOfRangeCount > 0 ) {
+
+                                                                text += '\nOut-of-range vertices (r > radius): ' + d.outOfRangeCount;
+
+                                                        }
+
+                                                } else {
+
+                                                        const localPlanes = getConeLocalClippingPlanes( localPlane1, localPlane2 );
+                                                        const clippedConeGeometry = createClippedConeGeometry( coneRadius, coneHeight, coneSegments, localPlane1, localPlane2 );
+                                                        const size = computeBoundingBoxSizes( clippedConeGeometry );
+                                                        const maxAngle = computeSurfacePlaneMaxAngle( clippedConeGeometry, localPlanes[ 0 ], localPlanes[ 1 ] );
+                                                        text = 'Oriented bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z ) + '\n';
+                                                        text += 'Max surface-plane angle: ' + ( ( maxAngle * 180 / Math.PI ).toFixed( 1 ) ) + '°';
+                                                        clippedConeGeometry.dispose();
+
+                                                }
 
                                         }
 
@@ -1757,6 +3661,16 @@ scenes.forEach( updateStats );
                                                 const triangles = flattenedGeometry.index ? flattenedGeometry.index.count / 3 : flattenedGeometry.getAttribute( 'position' ).count / 3;
                                                 text = 'Triangles: ' + triangles + '\n';
                                                 text += 'Bounding box: ' + formatNumber( size.x ) + ' × ' + formatNumber( size.y ) + ' × ' + formatNumber( size.z );
+
+                                                if ( patternFirst ) {
+
+                                                        const fitted = fitConeFromFlatGeometry( flattenedGeometry );
+                                                        text += '\nFlat sector φ: ' + ( fitted.sectorAngle * 180 / Math.PI ).toFixed( 2 ) + '°';
+                                                        text += '\nR range: ' + fitted.minR.toFixed( 3 ) + ' … ' + fitted.maxR.toFixed( 3 );
+                                                        text += '\nFit: r = R/k, φ = α·k, k = 1/sin(α) = ' + fitted.k.toFixed( 4 );
+                                                        text += '\n→ α ' + ( fitted.coneAngle * 180 / Math.PI ).toFixed( 2 ) + '°, r_base ' + fitted.radius.toFixed( 3 );
+
+                                                }
 
                                         }
 
@@ -1994,6 +3908,655 @@ scenes.forEach( updateStats );
 
                                 }
 
+                                function getConeDevelopableK( coneAngle ) {
+
+                                        return 1 / Math.sin( coneAngle );
+
+                                }
+
+                                function getFlatDevelopableOffset( flatGeometry ) {
+
+                                        const offset = flatGeometry && flatGeometry.userData && flatGeometry.userData.developableOffset;
+                                        if ( offset ) return { x: offset.x || 0, z: offset.z || 0 };
+                                        return { x: 0, z: 0 };
+
+                                }
+
+                                function flatPointToConeSurface( xFlat, zFlat, params ) {
+
+                                        const { coneAngle, height, radius } = params;
+                                        const k = getConeDevelopableK( coneAngle );
+                                        const halfHeight = height / 2;
+                                        const R = Math.hypot( xFlat, zFlat );
+
+                                        if ( R < APEX_EPS ) {
+
+                                                return {
+                                                        x: 0,
+                                                        y: halfHeight,
+                                                        z: 0,
+                                                        r: 0,
+                                                        theta: 0,
+                                                        u: 0,
+                                                        v: 0
+                                                };
+
+                                        }
+
+                                        const alpha = Math.atan2( zFlat, xFlat );
+                                        const r = R / k;
+                                        const theta = alpha * k;
+                                        const y = halfHeight - ( r / radius ) * height;
+
+                                        return {
+                                                x: r * Math.cos( theta ),
+                                                y: y,
+                                                z: r * Math.sin( theta ),
+                                                r: r,
+                                                theta: theta,
+                                                u: theta / ( Math.PI * 2 ),
+                                                v: ( halfHeight - y ) / height
+                                        };
+
+                                }
+
+                                function coneSurfaceToFlatPoint( x, y, z, params ) {
+
+                                        const { coneAngle, height, radius } = params;
+                                        const k = getConeDevelopableK( coneAngle );
+                                        const halfHeight = height / 2;
+                                        const r = Math.hypot( x, z );
+                                        let theta = r < APEX_EPS ? 0 : Math.atan2( z, x );
+                                        // Match the forward sampler's θ ∈ [0, 2π) so α = θ/k round-trips.
+                                        if ( theta < 0 ) theta += Math.PI * 2;
+                                        const R = r * k;
+                                        const alpha = theta / k;
+
+                                        return {
+                                                x: R * Math.cos( alpha ),
+                                                z: R * Math.sin( alpha ),
+                                                r: r,
+                                                theta: theta,
+                                                v: radius > 0 ? ( r / radius ) : ( ( halfHeight - y ) / height )
+                                        };
+
+                                }
+
+                                function createFlattenedGeometryFromConeBuffer( coneGeometry, params = {} ) {
+
+                                        const positions = coneGeometry && coneGeometry.getAttribute( 'position' );
+                                        const uvs = coneGeometry && coneGeometry.getAttribute( 'uv' );
+                                        const index = coneGeometry && coneGeometry.index;
+                                        if ( ! positions || positions.count < 3 ) return null;
+
+                                        const resolved = {
+                                                coneAngle: params.coneAngle,
+                                                height: params.height != null ? params.height : params.coneHeight,
+                                                radius: params.radius
+                                        };
+                                        const k = getConeDevelopableK( resolved.coneAngle );
+                                        const halfHeight = resolved.height / 2;
+                                        const count = positions.count;
+                                        const flatPositions = new Float32Array( count * 3 );
+                                        const flatNormals = new Float32Array( count * 3 );
+                                        const flatUvs = new Float32Array( count * 2 );
+
+                                        for ( let i = 0; i < count; i ++ ) {
+
+                                                let xFlat;
+                                                let zFlat;
+                                                let u;
+                                                let v;
+
+                                                if ( uvs ) {
+
+                                                        const theta = uvs.getX( i ) * Math.PI * 2;
+                                                        v = uvs.getY( i );
+                                                        const r = v * resolved.radius;
+                                                        const R = r * k;
+                                                        const alpha = theta / k;
+                                                        xFlat = R * Math.cos( alpha );
+                                                        zFlat = R * Math.sin( alpha );
+                                                        u = uvs.getX( i );
+
+                                                } else {
+
+                                                        const flat = coneSurfaceToFlatPoint(
+                                                                positions.getX( i ),
+                                                                positions.getY( i ),
+                                                                positions.getZ( i ),
+                                                                resolved
+                                                        );
+                                                        xFlat = flat.x;
+                                                        zFlat = flat.z;
+                                                        u = flat.theta / ( Math.PI * 2 );
+                                                        v = flat.v;
+
+                                                }
+
+                                                flatPositions[ i * 3 ] = xFlat;
+                                                flatPositions[ i * 3 + 1 ] = 0;
+                                                flatPositions[ i * 3 + 2 ] = zFlat;
+                                                flatNormals[ i * 3 ] = 0;
+                                                flatNormals[ i * 3 + 1 ] = 1;
+                                                flatNormals[ i * 3 + 2 ] = 0;
+                                                flatUvs[ i * 2 ] = u;
+                                                flatUvs[ i * 2 + 1 ] = v;
+
+                                        }
+
+                                        const geometry = new THREE.BufferGeometry();
+                                        geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( flatPositions, 3 ) );
+                                        geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( flatNormals, 3 ) );
+                                        geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( flatUvs, 2 ) );
+
+                                        if ( index ) {
+
+                                                geometry.setIndex( Array.from( index.array ) );
+
+                                        }
+
+                                        geometry.computeBoundingBox();
+                                        if ( geometry.boundingBox ) {
+
+                                                const center = new THREE.Vector3();
+                                                geometry.boundingBox.getCenter( center );
+                                                geometry.translate( - center.x, 0, - center.z );
+                                                geometry.userData.developableOffset = { x: center.x, z: center.z };
+
+                                        } else {
+
+                                                geometry.userData.developableOffset = { x: 0, z: 0 };
+
+                                        }
+
+                                        return geometry;
+
+                                }
+
+                                function extractFlatPoints( input, offset ) {
+
+                                        const points = [];
+                                        const ox = offset ? offset.x : 0;
+                                        const oz = offset ? offset.z : 0;
+
+                                        if ( ! input ) return points;
+
+                                        if ( input.isBufferGeometry ) {
+
+                                                const positions = input.getAttribute( 'position' );
+                                                if ( ! positions ) return points;
+
+                                                for ( let i = 0; i < positions.count; i ++ ) {
+
+                                                        points.push( {
+                                                                x: positions.getX( i ) + ox,
+                                                                z: positions.getZ( i ) + oz
+                                                        } );
+
+                                                }
+
+                                                return points;
+
+                                        }
+
+                                        if ( Array.isArray( input ) ) {
+
+                                                for ( let i = 0; i < input.length; i ++ ) {
+
+                                                        const p = input[ i ];
+                                                        if ( Array.isArray( p ) ) {
+
+                                                                points.push( { x: p[ 0 ] + ox, z: p[ 1 ] + oz } );
+
+                                                        } else if ( p && typeof p.x === 'number' ) {
+
+                                                                // Vector2 uses y for the second planar axis; Vector3 uses z
+                                                                const z = typeof p.z === 'number' ? p.z : p.y;
+                                                                points.push( { x: p.x + ox, z: z + oz } );
+
+                                                        }
+
+                                                }
+
+                                        }
+
+                                        return points;
+
+                                }
+
+                                function angularSpan( points ) {
+
+                                        const angles = [];
+                                        for ( let i = 0; i < points.length; i ++ ) {
+
+                                                const R = Math.hypot( points[ i ].x, points[ i ].z );
+                                                if ( R < APEX_EPS ) continue;
+                                                angles.push( Math.atan2( points[ i ].z, points[ i ].x ) );
+
+                                        }
+
+                                        if ( angles.length < 2 ) return 0;
+
+                                        angles.sort( function ( a, b ) {
+
+                                                return a - b;
+
+                                        } );
+
+                                        let maxGap = 0;
+                                        for ( let i = 0; i < angles.length - 1; i ++ ) {
+
+                                                maxGap = Math.max( maxGap, angles[ i + 1 ] - angles[ i ] );
+
+                                        }
+
+                                        maxGap = Math.max( maxGap, ( angles[ 0 ] + Math.PI * 2 ) - angles[ angles.length - 1 ] );
+                                        const span = Math.PI * 2 - maxGap;
+                                        return span > 0 ? span : 0;
+
+                                }
+
+                                function inferConeAngleFromFlatPoints( points ) {
+
+                                        const phi = angularSpan( points );
+                                        const ratio = Math.min( Math.max( phi / ( Math.PI * 2 ), 1e-6 ), 1 - 1e-6 );
+                                        return Math.asin( ratio );
+
+                                }
+
+                                function inferRadiusFromFlatPoints( points, coneAngle ) {
+
+                                        const k = getConeDevelopableK( coneAngle );
+                                        let maxR = 0;
+                                        for ( let i = 0; i < points.length; i ++ ) {
+
+                                                maxR = Math.max( maxR, Math.hypot( points[ i ].x, points[ i ].z ) );
+
+                                        }
+
+                                        return maxR / k;
+
+                                }
+
+                                // Unique right circular cone fitting a flat developable net:
+                                // flat polar (R, α) ↔ cone (r, φ) via k = 1/sin(α_cone), r = R/k, φ = α*k.
+                                // Sector angle φ_flat = 2π sin(α_cone) when the net covers a full 2π of generators.
+                                function fitConeFromFlatGeometry( flatGeometry ) {
+
+                                        const offset = getFlatDevelopableOffset( flatGeometry );
+                                        const points = extractFlatPoints( flatGeometry, offset );
+                                        const sectorAngle = angularSpan( points );
+                                        const coneAngle = inferConeAngleFromFlatPoints( points );
+                                        const k = getConeDevelopableK( coneAngle );
+                                        let minR = Infinity;
+                                        let maxR = 0;
+
+                                        for ( let i = 0; i < points.length; i ++ ) {
+
+                                                const R = Math.hypot( points[ i ].x, points[ i ].z );
+                                                minR = Math.min( minR, R );
+                                                maxR = Math.max( maxR, R );
+
+                                        }
+
+                                        if ( ! Number.isFinite( minR ) ) minR = 0;
+                                        if ( ! Number.isFinite( maxR ) ) maxR = 0;
+
+                                        const radius = maxR / k;
+                                        const height = coneAngle > 1e-6 ? radius / Math.tan( coneAngle ) : 5;
+
+                                        return {
+                                                coneAngle: coneAngle,
+                                                radius: radius,
+                                                height: height,
+                                                k: k,
+                                                sectorAngle: sectorAngle,
+                                                minR: minR,
+                                                maxR: maxR,
+                                                minRCone: minR / k,
+                                                maxRCone: radius
+                                        };
+
+                                }
+
+                                function resolveConeDevelopableParams( flatInput, params = {} ) {
+
+                                        const offset = flatInput && flatInput.isBufferGeometry
+                                                ? getFlatDevelopableOffset( flatInput )
+                                                : { x: 0, z: 0 };
+                                        const points = extractFlatPoints( flatInput, offset );
+                                        const inferred = {};
+
+                                        if ( params.fitFromFlat ) {
+
+                                                const fitted = flatInput && flatInput.isBufferGeometry
+                                                        ? fitConeFromFlatGeometry( flatInput )
+                                                        : {
+                                                                coneAngle: inferConeAngleFromFlatPoints( points ),
+                                                                radius: null,
+                                                                height: null
+                                                        };
+                                                if ( fitted.radius == null ) {
+
+                                                        fitted.radius = inferRadiusFromFlatPoints( points, fitted.coneAngle );
+                                                        fitted.height = fitted.coneAngle > 1e-6 ? fitted.radius / Math.tan( fitted.coneAngle ) : 5;
+
+                                                }
+
+                                                return {
+                                                        coneAngle: fitted.coneAngle,
+                                                        height: fitted.height,
+                                                        radius: fitted.radius,
+                                                        inferred: { coneAngle: true, height: true, radius: true }
+                                                };
+
+                                        }
+
+                                        let height = params.height != null ? params.height : params.coneHeight;
+                                        if ( height == null ) {
+
+                                                height = 5;
+                                                inferred.height = true;
+
+                                        }
+
+                                        let coneAngle = params.coneAngle;
+                                        if ( coneAngle == null ) {
+
+                                                coneAngle = inferConeAngleFromFlatPoints( points );
+                                                inferred.coneAngle = true;
+
+                                        }
+
+                                        let radius = params.radius;
+                                        if ( radius == null ) {
+
+                                                radius = inferRadiusFromFlatPoints( points, coneAngle );
+                                                inferred.radius = true;
+
+                                        }
+
+                                        if ( inferred.coneAngle && inferred.radius && inferred.height ) {
+
+                                                height = coneAngle > 1e-6 ? radius / Math.tan( coneAngle ) : height;
+
+                                        }
+
+                                        return { coneAngle: coneAngle, height: height, radius: radius, inferred: inferred };
+
+                                }
+
+                                function updateLiftedConeGeometry( geometry, params = {} ) {
+
+                                        const resolved = {
+                                                coneAngle: params.coneAngle,
+                                                height: params.height != null ? params.height : params.coneHeight,
+                                                radius: params.radius
+                                        };
+                                        const positions = geometry.getAttribute( 'position' );
+                                        const uvs = geometry.getAttribute( 'uv' );
+                                        if ( ! positions || ! uvs ) return geometry;
+
+                                        const halfHeight = resolved.height / 2;
+                                        let minR = Infinity;
+                                        let maxR = - Infinity;
+                                        let outOfRangeCount = 0;
+
+                                        for ( let i = 0; i < positions.count; i ++ ) {
+
+                                                const theta = uvs.getX( i ) * Math.PI * 2;
+                                                const v = uvs.getY( i );
+                                                const r = v * resolved.radius;
+                                                const y = halfHeight - v * resolved.height;
+
+                                                positions.setXYZ( i, r * Math.cos( theta ), y, r * Math.sin( theta ) );
+                                                minR = Math.min( minR, r );
+                                                maxR = Math.max( maxR, r );
+                                                if ( r > resolved.radius + 1e-6 ) outOfRangeCount ++;
+
+                                        }
+
+                                        positions.needsUpdate = true;
+                                        geometry.computeVertexNormals();
+                                        geometry.userData.developableParams = {
+                                                coneAngle: resolved.coneAngle,
+                                                height: resolved.height,
+                                                radius: resolved.radius,
+                                                inferred: {}
+                                        };
+                                        geometry.userData.developableRange = {
+                                                minR: Number.isFinite( minR ) ? minR : 0,
+                                                maxR: Number.isFinite( maxR ) ? maxR : 0,
+                                                outOfRangeCount: outOfRangeCount
+                                        };
+
+                                        return geometry;
+
+                                }
+
+                                function createConeGeometryFromFlatGeometry( flatGeometry, params = {} ) {
+
+                                        const srcPositions = flatGeometry && flatGeometry.getAttribute( 'position' );
+                                        if ( ! srcPositions || srcPositions.count < 3 ) return null;
+
+                                        const resolved = resolveConeDevelopableParams( flatGeometry, params );
+                                        const offset = getFlatDevelopableOffset( flatGeometry );
+                                        const srcUv = flatGeometry.getAttribute( 'uv' );
+                                        const srcIndex = flatGeometry.index;
+                                        const count = srcPositions.count;
+                                        const halfHeight = resolved.height / 2;
+
+                                        const positions = new Float32Array( count * 3 );
+                                        const uvs = new Float32Array( count * 2 );
+                                        let minR = Infinity;
+                                        let maxR = - Infinity;
+                                        let outOfRangeCount = 0;
+
+                                        for ( let i = 0; i < count; i ++ ) {
+
+                                                let lifted;
+
+                                                if ( srcUv && ! params.useFlatPositions ) {
+
+                                                        // Prefer developable UVs from the forward unroll (θ/(2π), r/radius).
+                                                        // Avoids atan2 branch cuts when the flat sector spans more than π.
+                                                        const theta = srcUv.getX( i ) * Math.PI * 2;
+                                                        const v = srcUv.getY( i );
+                                                        const r = v * resolved.radius;
+                                                        const y = halfHeight - v * resolved.height;
+                                                        lifted = {
+                                                                x: r * Math.cos( theta ),
+                                                                y: y,
+                                                                z: r * Math.sin( theta ),
+                                                                r: r,
+                                                                theta: theta,
+                                                                u: srcUv.getX( i ),
+                                                                v: v
+                                                        };
+
+                                                } else {
+
+                                                        // Exact (R, α) → (r, φ) lift for a fitted cone.
+                                                        lifted = flatPointToConeSurface(
+                                                                srcPositions.getX( i ) + offset.x,
+                                                                srcPositions.getZ( i ) + offset.z,
+                                                                resolved
+                                                        );
+
+                                                }
+
+                                                positions[ i * 3 ] = lifted.x;
+                                                positions[ i * 3 + 1 ] = lifted.y;
+                                                positions[ i * 3 + 2 ] = lifted.z;
+                                                uvs[ i * 2 ] = lifted.u;
+                                                uvs[ i * 2 + 1 ] = lifted.v;
+                                                minR = Math.min( minR, lifted.r );
+                                                maxR = Math.max( maxR, lifted.r );
+                                                if ( lifted.r > resolved.radius + 1e-6 ) outOfRangeCount ++;
+
+                                        }
+
+                                        const geometry = new THREE.BufferGeometry();
+                                        geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+                                        geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( uvs, 2 ) );
+
+                                        if ( srcIndex ) {
+
+                                                geometry.setIndex( Array.from( srcIndex.array ) );
+
+                                        }
+
+                                        geometry.computeVertexNormals();
+                                        geometry.userData.developableParams = {
+                                                coneAngle: resolved.coneAngle,
+                                                height: resolved.height,
+                                                radius: resolved.radius,
+                                                inferred: resolved.inferred
+                                        };
+                                        geometry.userData.developableRange = {
+                                                minR: Number.isFinite( minR ) ? minR : 0,
+                                                maxR: Number.isFinite( maxR ) ? maxR : 0,
+                                                outOfRangeCount: outOfRangeCount
+                                        };
+
+                                        return geometry;
+
+                                }
+
+                                function normalizeFlatContour( contourPoints ) {
+
+                                        const points = extractFlatPoints( contourPoints, { x: 0, z: 0 } );
+                                        if ( points.length === 0 ) return [];
+
+                                        const first = points[ 0 ];
+                                        const last = points[ points.length - 1 ];
+                                        if ( Math.hypot( first.x - last.x, first.z - last.z ) < 1e-9 ) {
+
+                                                points.pop();
+
+                                        }
+
+                                        return points;
+
+                                }
+
+                                function createConeGeometryFromFlatContour( contourPoints, params = {} ) {
+
+                                        const contour = normalizeFlatContour( contourPoints );
+                                        if ( contour.length < 3 ) return null;
+
+                                        const flatData = [];
+                                        for ( let i = 0; i < contour.length; i ++ ) {
+
+                                                flatData.push( contour[ i ].x, contour[ i ].z );
+
+                                        }
+
+                                        const triangles = Earcut.triangulate( flatData, null, 2 );
+                                        const positions = [];
+                                        for ( let i = 0; i < contour.length; i ++ ) {
+
+                                                positions.push( contour[ i ].x, 0, contour[ i ].z );
+
+                                        }
+
+                                        const flatGeometry = new THREE.BufferGeometry();
+                                        flatGeometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+                                        flatGeometry.setIndex( triangles );
+                                        flatGeometry.userData.developableOffset = { x: 0, z: 0 };
+
+                                        return createConeGeometryFromFlatGeometry( flatGeometry, params );
+
+                                }
+
+                                function createConeGeometryFromPattern( input, params = {} ) {
+
+                                        if ( input && input.isBufferGeometry ) {
+
+                                                return createConeGeometryFromFlatGeometry( input, params );
+
+                                        }
+
+                                        return createConeGeometryFromFlatContour( input, params );
+
+                                }
+
+                                function measureFlatConeRoundTrip( flatGeometry, params = {} ) {
+
+                                        if ( ! flatGeometry || ! flatGeometry.getAttribute( 'position' ) ) return null;
+
+                                        const resolved = resolveConeDevelopableParams( flatGeometry, params );
+                                        const offset = getFlatDevelopableOffset( flatGeometry );
+                                        const k = getConeDevelopableK( resolved.coneAngle );
+                                        const seamShift = ( Math.PI * 2 ) / k;
+                                        const halfHeight = resolved.height / 2;
+                                        const srcPositions = flatGeometry.getAttribute( 'position' );
+                                        const srcUv = flatGeometry.getAttribute( 'uv' );
+                                        let maxError = 0;
+                                        let minR = Infinity;
+                                        let maxR = - Infinity;
+                                        let outOfRangeCount = 0;
+
+                                        for ( let i = 0; i < srcPositions.count; i ++ ) {
+
+                                                const xFlat = srcPositions.getX( i ) + offset.x;
+                                                const zFlat = srcPositions.getZ( i ) + offset.z;
+                                                let lifted;
+
+                                                if ( srcUv && ! params.useFlatPositions ) {
+
+                                                        const theta = srcUv.getX( i ) * Math.PI * 2;
+                                                        const v = srcUv.getY( i );
+                                                        const r = v * resolved.radius;
+                                                        lifted = {
+                                                                x: r * Math.cos( theta ),
+                                                                y: halfHeight - v * resolved.height,
+                                                                z: r * Math.sin( theta ),
+                                                                r: r
+                                                        };
+
+                                                } else {
+
+                                                        lifted = flatPointToConeSurface( xFlat, zFlat, resolved );
+
+                                                }
+
+                                                const back = coneSurfaceToFlatPoint( lifted.x, lifted.y, lifted.z, resolved );
+
+                                                // Seam vertices (θ=0 and θ=2π) share a 3D point but differ in flat α by 2π/k.
+                                                let err = Math.hypot( back.x - xFlat, back.z - zFlat );
+                                                const Rb = Math.hypot( back.x, back.z );
+                                                if ( Rb >= APEX_EPS ) {
+
+                                                        const ab = Math.atan2( back.z, back.x );
+                                                        for ( let s = - 1; s <= 1; s += 2 ) {
+
+                                                                const xs = Rb * Math.cos( ab + s * seamShift );
+                                                                const zs = Rb * Math.sin( ab + s * seamShift );
+                                                                err = Math.min( err, Math.hypot( xs - xFlat, zs - zFlat ) );
+
+                                                        }
+
+                                                }
+
+                                                maxError = Math.max( maxError, err );
+                                                minR = Math.min( minR, lifted.r );
+                                                maxR = Math.max( maxR, lifted.r );
+                                                if ( lifted.r > resolved.radius + 1e-6 ) outOfRangeCount ++;
+
+                                        }
+
+                                        return {
+                                                maxError: maxError,
+                                                minR: Number.isFinite( minR ) ? minR : 0,
+                                                maxR: Number.isFinite( maxR ) ? maxR : 0,
+                                                outOfRangeCount: outOfRangeCount,
+                                                params: resolved
+                                        };
+
+                                }
+
                                 function createFlattenedConeGeometry( radius, height, radialSegments, coneAngle, plane1, plane2, applyCuts = true ) {
 
                                         const positions = [];
@@ -2003,7 +4566,7 @@ scenes.forEach( updateStats );
 
                                         const heightSegments = 20;
                                         const halfHeight = height / 2;
-                                        const k = 1 / Math.sin( coneAngle );
+                                        const k = getConeDevelopableK( coneAngle );
 
                                         if ( applyCuts ) {
 
@@ -2103,6 +4666,10 @@ scenes.forEach( updateStats );
                                                 const center = new THREE.Vector3();
                                                 geometry.boundingBox.getCenter( center );
                                                 geometry.translate( - center.x, 0, - center.z );
+                                                // Apex-centric origin before centering; inverse lift must undo this shift.
+                                                geometry.userData.developableOffset = { x: center.x, z: center.z };
+                                        } else {
+                                                geometry.userData.developableOffset = { x: 0, z: 0 };
                                         }
 
                                         return geometry;
