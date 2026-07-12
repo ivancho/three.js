@@ -94,11 +94,71 @@
                                 background: #eee;
                         }
 
-                        .controls-hint {
-                                font-family: sans-serif;
-                                font-size: 0.85em;
+                        #info .info-help {
+                                position: relative;
+                                display: inline-flex;
+                                align-items: center;
+                                justify-content: center;
+                                margin-left: 0.35em;
+                                width: 1.15em;
+                                height: 1.15em;
+                                border-radius: 50%;
+                                border: 1px solid #888;
                                 color: #666;
-                                margin-top: 0.25em;
+                                font-family: sans-serif;
+                                font-size: 1em;
+                                font-weight: 600;
+                                line-height: 1;
+                                cursor: help;
+                                vertical-align: middle;
+                                pointer-events: auto;
+                                z-index: 3;
+                        }
+
+                        #info .info-help:hover,
+                        #info .info-help:focus-visible {
+                                color: #222;
+                                border-color: #444;
+                                outline: none;
+                        }
+
+                        #info .info-help-tooltip {
+                                position: absolute;
+                                left: 50%;
+                                top: calc( 100% + 0.45em );
+                                transform: translateX( -50% );
+                                width: max-content;
+                                max-width: min( 22rem, 80vw );
+                                padding: 0.65em 0.8em;
+                                border-radius: 4px;
+                                background: #222;
+                                color: #f2f2f2;
+                                font-family: sans-serif;
+                                font-size: 1em;
+                                font-weight: 400;
+                                line-height: 1.45;
+                                text-align: left;
+                                white-space: normal;
+                                box-shadow: 0 4px 14px rgba( 0, 0, 0, 0.2 );
+                                opacity: 0;
+                                pointer-events: none;
+                                transition: opacity 0.12s ease;
+                                z-index: 3;
+                        }
+
+                        #info .info-help-tooltip::before {
+                                content: '';
+                                position: absolute;
+                                left: 50%;
+                                bottom: 100%;
+                                transform: translateX( -50% );
+                                border: 6px solid transparent;
+                                border-bottom-color: #222;
+                        }
+
+                        #info .info-help:hover .info-help-tooltip,
+                        #info .info-help:focus-visible .info-help-tooltip {
+                                opacity: 1;
                         }
 
                         @media (max-width: 999px) {
@@ -118,7 +178,13 @@
                 <div id="content">
                         <div id="info">
                                 <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - unrolling conics
-                                <div class="controls-hint">Drag to rotate · right-click drag to move · scroll to zoom · Autosave keeps the last 20 param changes · Save with a name to store a named history · Load a name and version to restore</div>
+                                <span class="info-help" tabindex="0" aria-label="Controls and save tips">?
+                                        <span class="info-help-tooltip" role="tooltip">
+                                                Drag to rotate · right-click drag to move · scroll to zoom.
+                                                Autosave keeps the last 20 param changes. Save with a name to store a separate named history. Select a name and version to restore.
+                                                Download SVG of the unrolled pattern to print.
+                                        </span>
+                                </span>
                         </div>
                 </div>
 
