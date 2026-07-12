@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: ''
+      ignore:
+        description: gitignore-style patterns (one per line) of files/folders to skip uploading
+        required: false
+        type: string
+        default: ''
   push:
     branches:
       - conics
@@ -42,6 +47,7 @@ jobs:
       DESTINATION_FOLDER: ${{ github.event.inputs.destination_folder || vars.R2_DESTINATION_FOLDER }}
       PATH_PREFIX: ${{ github.event.inputs.path_prefix || vars.R2_UPLOAD_PATH_PREFIX || '' }}
       PATH_REWRITES: ${{ github.event.inputs.path_rewrites || vars.R2_PATH_REWRITES || '{}' }}
+      PATH_IGNORE: ${{ github.event.inputs.ignore || vars.R2_IGNORE || '' }}
     steps:
       - name: Git checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -78,6 +84,15 @@ jobs:
                   print("PATH_REWRITES keys and values must be strings")
                   sys.exit(1)
           print(f"Path rewrites: {data}")
+
+          ignore_raw = os.environ.get("PATH_IGNORE") or ""
+          ignore_lines = [
+              line for line in ignore_raw.splitlines()
+              if line.strip() and not line.strip().startswith("#")
+          ]
+          print(f"Ignore patterns ({len(ignore_lines)}):")
+          for line in ignore_lines:
+              print(f"  {line}")
           PY
 
       - name: Collect changed files
@@ -108,6 +123,44 @@ jobs:
               esac
             done < changed_files.txt > filtered_files.txt
             mv filtered_files.txt changed_files.txt
+          fi
+
+          if [ -n "$PATH_IGNORE" ]; then
+            python3 -m pip install --user --quiet pathspec
+            python3 <<'PY'
+          import os
+          import pathspec
+
+          raw = os.environ.get("PATH_IGNORE") or ""
+          patterns = [
+              line.rstrip("\n")
+              for line in raw.splitlines()
+              if line.strip() and not line.strip().startswith("#")
+          ]
+          spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+
+          kept = []
+          ignored = []
+          with open("changed_files.txt", encoding="utf-8") as handle:
+              for file_path in handle:
+                  file_path = file_path.strip()
+                  if not file_path:
+                      continue
+                  if spec.match_file(file_path):
+                      ignored.append(file_path)
+                  else:
+                      kept.append(file_path)
+
+          with open("changed_files.txt", "w", encoding="utf-8") as handle:
+              for file_path in kept:
+                  handle.write(file_path + "\n")
+
+          if ignored:
+              print("Ignored by R2_IGNORE:")
+              for file_path in ignored:
+                  print(f"  {file_path}")
+          print(f"Kept {len(kept)} file(s) after ignore filter.")
+          PY
           fi
 
           if [ ! -s changed_files.txt ]; then
