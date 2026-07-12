@@ -13,15 +13,28 @@ export class Profiler extends EventDispatcher {
 		this.tabs = {};
 		this.activeTabId = null;
 		this.isResizing = false;
-		this.lastHeightBottom = 350; // Height for bottom position
-		this.lastWidthRight = 450; // Width for right position
-		this.position = 'bottom'; // 'bottom' or 'right'
+		this.isDraggingPanel = false;
+		this.lastHeightBottom = 350;
+		this.lastHeightTop = 350;
+		this.lastWidthRight = 450;
+		this.lastWidthLeft = 450;
+		this.lastWidthFloating = 450;
+		this.lastHeightFloating = 350;
+		this.floatingLeft = Math.max( 50, Math.floor( ( window.innerWidth - 450 ) / 2 ) );
+		this.floatingTop = Math.max( 50, Math.floor( ( window.innerHeight - 350 ) / 2 ) );
+		this.miniLeft = null;
+		this.miniTop = null;
+		this.miniPanelMoved = false;
+		this.position = 'bottom'; // 'bottom' | 'right' | 'top' | 'left' | 'floating'
+		this.positions = [ 'bottom', 'right', 'top', 'left', 'floating' ];
 		this.detachedWindows = []; // Array to store detached tab windows
 		this.maxZIndex = 1002; // Track the highest z-index for detached windows (starts at base z-index from CSS)
 		this.nextTabOriginalIndex = 0; // Track the original order of tabs as they are added
 
 		this.setupShell();
 		this.setupResizing();
+		this.setupPanelDrag();
+		this.setupMiniPanelDrag();
 
 		Style.init( this.domElement );
 
@@ -53,15 +66,20 @@ export class Profiler extends EventDispatcher {
 
 		}
 
-		if ( this.position === 'right' ) {
+		if ( this.position === 'right' || this.position === 'left' ) {
 
 			return { width: this.panel.offsetWidth, height: 0 };
 
-		} else {
+		}
+
+		if ( this.position === 'bottom' || this.position === 'top' ) {
 
 			return { width: 0, height: this.panel.offsetHeight };
 
 		}
+
+		// Floating overlays the canvas
+		return { width: 0, height: 0 };
 
 	}
 
@@ -138,7 +156,7 @@ export class Profiler extends EventDispatcher {
 			const windowWidth = window.innerWidth;
 			const windowHeight = window.innerHeight;
 
-			if ( this.position === 'bottom' ) {
+			if ( this.position === 'bottom' || this.position === 'top' ) {
 
 				const currentHeight = this.panel.offsetHeight;
 				const maxHeight = windowHeight - 50; // Leave 50px margin
@@ -146,11 +164,20 @@ export class Profiler extends EventDispatcher {
 				if ( currentHeight > maxHeight ) {
 
 					this.panel.style.height = `${ maxHeight }px`;
-					this.lastHeightBottom = maxHeight;
+
+					if ( this.position === 'bottom' ) {
+
+						this.lastHeightBottom = maxHeight;
+
+					} else {
+
+						this.lastHeightTop = maxHeight;
+
+					}
 
 				}
 
-			} else if ( this.position === 'right' ) {
+			} else if ( this.position === 'right' || this.position === 'left' ) {
 
 				const currentWidth = this.panel.offsetWidth;
 				const maxWidth = windowWidth - 50; // Leave 50px margin
@@ -158,9 +185,22 @@ export class Profiler extends EventDispatcher {
 				if ( currentWidth > maxWidth ) {
 
 					this.panel.style.width = `${ maxWidth }px`;
-					this.lastWidthRight = maxWidth;
+
+					if ( this.position === 'right' ) {
+
+						this.lastWidthRight = maxWidth;
+
+					} else {
+
+						this.lastWidthLeft = maxWidth;
+
+					}
 
 				}
+
+			} else if ( this.position === 'floating' ) {
+
+				this.constrainFloatingPanel();
 
 			}
 
@@ -193,6 +233,7 @@ export class Profiler extends EventDispatcher {
 
 			constrainDetachedWindows();
 			constrainMainPanel();
+			this.constrainMiniPanel();
 			this.checkHeaderScroll();
 
 		} );
@@ -276,8 +317,12 @@ export class Profiler extends EventDispatcher {
 
 		// Create mini-panel for builtin tabs (shown when panel is hidden)
 		this.miniPanel = document.createElement( 'div' );
-		this.miniPanel.classList.add( 'profiler-mini-panel' );
 		this.miniPanel.className = 'profiler-mini-panel';
+
+		const miniHeader = document.createElement( 'div' );
+		miniHeader.className = 'profiler-mini-panel-header';
+		miniHeader.title = 'Drag to move';
+		this.miniPanel.appendChild( miniHeader );
 
 		this.panel = document.createElement( 'div' );
 		this.panel.classList.add( 'profiler-panel' );
@@ -305,9 +350,8 @@ export class Profiler extends EventDispatcher {
 
 		this.floatingBtn = document.createElement( 'button' );
 		this.floatingBtn.classList.add( 'floating-btn' );
-		this.floatingBtn.title = 'Switch to Right Side';
-		this.floatingBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>';
 		this.floatingBtn.onclick = () => this.togglePosition();
+		this.updatePositionButton();
 
 		// Hide position toggle button on small screens
 		if ( this.isSmallScreen ) {
@@ -377,6 +421,8 @@ export class Profiler extends EventDispatcher {
 			const startY = e.clientY;
 			const startHeight = this.panel.offsetHeight;
 			const startWidth = this.panel.offsetWidth;
+			const startLeft = parseFloat( this.panel.style.left ) || this.panel.offsetLeft || 0;
+			const startTop = parseFloat( this.panel.style.top ) || this.panel.offsetTop || 0;
 
 			const onMove = ( moveEvent ) => {
 
@@ -387,8 +433,17 @@ export class Profiler extends EventDispatcher {
 
 				if ( this.position === 'bottom' ) {
 
-					// Vertical resize for bottom position
 					const newHeight = startHeight - ( currentY - startY );
+
+					if ( newHeight > 100 && newHeight < window.innerHeight - 50 ) {
+
+						this.panel.style.height = `${ newHeight }px`;
+
+					}
+
+				} else if ( this.position === 'top' ) {
+
+					const newHeight = startHeight + ( currentY - startY );
 
 					if ( newHeight > 100 && newHeight < window.innerHeight - 50 ) {
 
@@ -398,7 +453,6 @@ export class Profiler extends EventDispatcher {
 
 				} else if ( this.position === 'right' ) {
 
-					// Horizontal resize for right position
 					const newWidth = startWidth - ( currentX - startX );
 
 					if ( newWidth > 200 && newWidth < window.innerWidth - 50 ) {
@@ -406,6 +460,37 @@ export class Profiler extends EventDispatcher {
 						this.panel.style.width = `${ newWidth }px`;
 
 					}
+
+				} else if ( this.position === 'left' ) {
+
+					const newWidth = startWidth + ( currentX - startX );
+
+					if ( newWidth > 200 && newWidth < window.innerWidth - 50 ) {
+
+						this.panel.style.width = `${ newWidth }px`;
+
+					}
+
+				} else if ( this.position === 'floating' ) {
+
+					const newWidth = startWidth + ( currentX - startX );
+					const newHeight = startHeight + ( currentY - startY );
+
+					if ( newWidth > 200 && newWidth < window.innerWidth - 50 ) {
+
+						this.panel.style.width = `${ newWidth }px`;
+
+					}
+
+					if ( newHeight > 100 && newHeight < window.innerHeight - 50 ) {
+
+						this.panel.style.height = `${ newHeight }px`;
+
+					}
+
+					// Keep top-left anchored while resizing from the bottom-right corner
+					this.panel.style.left = `${ startLeft }px`;
+					this.panel.style.top = `${ startTop }px`;
 
 				}
 
@@ -423,18 +508,7 @@ export class Profiler extends EventDispatcher {
 				resizer.removeEventListener( 'pointercancel', onEnd );
 				if ( ! this.panel.classList.contains( 'maximized' ) ) {
 
-					// Save dimensions based on current position
-					if ( this.position === 'bottom' ) {
-
-						this.lastHeightBottom = this.panel.offsetHeight;
-
-					} else if ( this.position === 'right' ) {
-
-						this.lastWidthRight = this.panel.offsetWidth;
-
-					}
-
-					// Save layout after resize
+					this.saveCurrentSize();
 					this.saveLayout();
 
 				}
@@ -451,6 +525,372 @@ export class Profiler extends EventDispatcher {
 
 	}
 
+	saveCurrentSize() {
+
+		if ( this.position === 'bottom' ) {
+
+			this.lastHeightBottom = this.panel.offsetHeight;
+
+		} else if ( this.position === 'top' ) {
+
+			this.lastHeightTop = this.panel.offsetHeight;
+
+		} else if ( this.position === 'right' ) {
+
+			this.lastWidthRight = this.panel.offsetWidth;
+
+		} else if ( this.position === 'left' ) {
+
+			this.lastWidthLeft = this.panel.offsetWidth;
+
+		} else if ( this.position === 'floating' ) {
+
+			this.lastWidthFloating = this.panel.offsetWidth;
+			this.lastHeightFloating = this.panel.offsetHeight;
+			this.floatingLeft = parseFloat( this.panel.style.left ) || this.panel.offsetLeft || 0;
+			this.floatingTop = parseFloat( this.panel.style.top ) || this.panel.offsetTop || 0;
+
+		}
+
+	}
+
+	constrainFloatingPanel() {
+
+		const windowWidth = window.innerWidth;
+		const windowHeight = window.innerHeight;
+		let width = this.panel.offsetWidth;
+		let height = this.panel.offsetHeight;
+		let left = parseFloat( this.panel.style.left ) || this.panel.offsetLeft || 0;
+		let top = parseFloat( this.panel.style.top ) || this.panel.offsetTop || 0;
+
+		if ( width > windowWidth - 50 ) {
+
+			width = windowWidth - 50;
+			this.panel.style.width = `${ width }px`;
+			this.lastWidthFloating = width;
+
+		}
+
+		if ( height > windowHeight - 50 ) {
+
+			height = windowHeight - 50;
+			this.panel.style.height = `${ height }px`;
+			this.lastHeightFloating = height;
+
+		}
+
+		const halfWidth = width / 2;
+		const halfHeight = height / 2;
+
+		if ( left + width > windowWidth + halfWidth ) {
+
+			left = windowWidth + halfWidth - width;
+
+		}
+
+		if ( left < - halfWidth ) {
+
+			left = - halfWidth;
+
+		}
+
+		if ( top + height > windowHeight + halfHeight ) {
+
+			top = windowHeight + halfHeight - height;
+
+		}
+
+		if ( top < - halfHeight ) {
+
+			top = - halfHeight;
+
+		}
+
+		this.panel.style.left = `${ left }px`;
+		this.panel.style.top = `${ top }px`;
+		this.floatingLeft = left;
+		this.floatingTop = top;
+
+	}
+
+	setupPanelDrag() {
+
+		const header = this.panel.querySelector( '.profiler-header' );
+
+		let isDragging = false;
+		let hasMoved = false;
+		let startX, startY, startLeft, startTop;
+		const dragThreshold = 5;
+
+		const onDragStart = ( e ) => {
+
+			if ( this.position !== 'floating' || this.panel.classList.contains( 'maximized' ) ) return;
+
+			if ( e.target.closest( '.profiler-controls' ) ) return;
+
+			const tabBtn = e.target.closest( '.tab-btn' );
+
+			// Let detachable tabs keep their own drag-to-detach behavior
+			if ( tabBtn && ! tabBtn.classList.contains( 'no-detach' ) ) return;
+
+			isDragging = true;
+			hasMoved = false;
+			this.isDraggingPanel = true;
+			header.setPointerCapture( e.pointerId );
+
+			startX = e.clientX;
+			startY = e.clientY;
+
+			const rect = this.panel.getBoundingClientRect();
+			startLeft = rect.left;
+			startTop = rect.top;
+
+		};
+
+		const onDragMove = ( e ) => {
+
+			if ( ! isDragging ) return;
+
+			const deltaX = e.clientX - startX;
+			const deltaY = e.clientY - startY;
+
+			if ( ! hasMoved && Math.abs( deltaX ) < dragThreshold && Math.abs( deltaY ) < dragThreshold ) return;
+
+			if ( ! hasMoved ) {
+
+				hasMoved = true;
+				this.panel.classList.add( 'dragging' );
+
+			}
+
+			e.preventDefault();
+
+			let newLeft = startLeft + deltaX;
+			let newTop = startTop + deltaY;
+
+			const windowWidth = window.innerWidth;
+			const windowHeight = window.innerHeight;
+			const panelWidth = this.panel.offsetWidth;
+			const panelHeight = this.panel.offsetHeight;
+			const halfWidth = panelWidth / 2;
+			const halfHeight = panelHeight / 2;
+
+			if ( newLeft + panelWidth > windowWidth + halfWidth ) {
+
+				newLeft = windowWidth + halfWidth - panelWidth;
+
+			}
+
+			if ( newLeft < - halfWidth ) {
+
+				newLeft = - halfWidth;
+
+			}
+
+			if ( newTop + panelHeight > windowHeight + halfHeight ) {
+
+				newTop = windowHeight + halfHeight - panelHeight;
+
+			}
+
+			if ( newTop < - halfHeight ) {
+
+				newTop = - halfHeight;
+
+			}
+
+			this.panel.style.left = `${ newLeft }px`;
+			this.panel.style.top = `${ newTop }px`;
+
+		};
+
+		const onDragEnd = () => {
+
+			if ( ! isDragging ) return;
+
+			isDragging = false;
+			this.isDraggingPanel = false;
+			this.panel.classList.remove( 'dragging' );
+
+			if ( hasMoved ) {
+
+				this.floatingLeft = parseFloat( this.panel.style.left ) || 0;
+				this.floatingTop = parseFloat( this.panel.style.top ) || 0;
+				this.saveLayout();
+
+			}
+
+			hasMoved = false;
+
+		};
+
+		header.addEventListener( 'pointerdown', onDragStart );
+		header.addEventListener( 'pointermove', onDragMove );
+		header.addEventListener( 'pointerup', onDragEnd );
+		header.addEventListener( 'pointercancel', onDragEnd );
+
+	}
+
+	setupMiniPanelDrag() {
+
+		const header = this.miniPanel.querySelector( '.profiler-mini-panel-header' );
+
+		let isDragging = false;
+		let hasMoved = false;
+		let startX, startY, startLeft, startTop;
+		const dragThreshold = 5;
+
+		const onDragStart = ( e ) => {
+
+			isDragging = true;
+			hasMoved = false;
+			header.setPointerCapture( e.pointerId );
+
+			startX = e.clientX;
+			startY = e.clientY;
+
+			const rect = this.miniPanel.getBoundingClientRect();
+			startLeft = rect.left;
+			startTop = rect.top;
+
+		};
+
+		const onDragMove = ( e ) => {
+
+			if ( ! isDragging ) return;
+
+			const deltaX = e.clientX - startX;
+			const deltaY = e.clientY - startY;
+
+			if ( ! hasMoved && Math.abs( deltaX ) < dragThreshold && Math.abs( deltaY ) < dragThreshold ) return;
+
+			if ( ! hasMoved ) {
+
+				hasMoved = true;
+				this.miniPanel.classList.add( 'dragging' );
+
+			}
+
+			e.preventDefault();
+
+			let newLeft = startLeft + deltaX;
+			let newTop = startTop + deltaY;
+
+			const windowWidth = window.innerWidth;
+			const windowHeight = window.innerHeight;
+			const panelWidth = this.miniPanel.offsetWidth;
+			const panelHeight = this.miniPanel.offsetHeight;
+			const halfWidth = panelWidth / 2;
+			const halfHeight = panelHeight / 2;
+
+			if ( newLeft + panelWidth > windowWidth + halfWidth ) {
+
+				newLeft = windowWidth + halfWidth - panelWidth;
+
+			}
+
+			if ( newLeft < - halfWidth ) {
+
+				newLeft = - halfWidth;
+
+			}
+
+			if ( newTop + panelHeight > windowHeight + halfHeight ) {
+
+				newTop = windowHeight + halfHeight - panelHeight;
+
+			}
+
+			if ( newTop < - halfHeight ) {
+
+				newTop = - halfHeight;
+
+			}
+
+			this.applyMiniPanelPosition( newLeft, newTop );
+
+		};
+
+		const onDragEnd = () => {
+
+			if ( ! isDragging ) return;
+
+			isDragging = false;
+			this.miniPanel.classList.remove( 'dragging' );
+
+			if ( hasMoved ) {
+
+				this.miniPanelMoved = true;
+				this.miniLeft = parseFloat( this.miniPanel.style.left ) || 0;
+				this.miniTop = parseFloat( this.miniPanel.style.top ) || 0;
+				this.saveLayout();
+
+			}
+
+			hasMoved = false;
+
+		};
+
+		header.addEventListener( 'pointerdown', onDragStart );
+		header.addEventListener( 'pointermove', onDragMove );
+		header.addEventListener( 'pointerup', onDragEnd );
+		header.addEventListener( 'pointercancel', onDragEnd );
+
+	}
+
+	applyMiniPanelPosition( left, top ) {
+
+		this.miniPanel.classList.add( 'moved' );
+		this.miniPanel.style.setProperty( 'left', `${ left }px`, 'important' );
+		this.miniPanel.style.setProperty( 'top', `${ top }px`, 'important' );
+		this.miniPanel.style.setProperty( 'right', 'auto', 'important' );
+		this.miniPanel.style.setProperty( 'bottom', 'auto', 'important' );
+		this.miniLeft = left;
+		this.miniTop = top;
+
+	}
+
+	constrainMiniPanel() {
+
+		if ( ! this.miniPanelMoved ) return;
+
+		const windowWidth = window.innerWidth;
+		const windowHeight = window.innerHeight;
+		const panelWidth = this.miniPanel.offsetWidth || 350;
+		const panelHeight = this.miniPanel.offsetHeight || 100;
+		let left = this.miniLeft !== null ? this.miniLeft : ( parseFloat( this.miniPanel.style.left ) || 0 );
+		let top = this.miniTop !== null ? this.miniTop : ( parseFloat( this.miniPanel.style.top ) || 0 );
+		const halfWidth = panelWidth / 2;
+		const halfHeight = panelHeight / 2;
+
+		if ( left + panelWidth > windowWidth + halfWidth ) {
+
+			left = windowWidth + halfWidth - panelWidth;
+
+		}
+
+		if ( left < - halfWidth ) {
+
+			left = - halfWidth;
+
+		}
+
+		if ( top + panelHeight > windowHeight + halfHeight ) {
+
+			top = windowHeight + halfHeight - panelHeight;
+
+		}
+
+		if ( top < - halfHeight ) {
+
+			top = - halfHeight;
+
+		}
+
+		this.applyMiniPanelPosition( left, top );
+
+	}
+
 	toggleMaximize() {
 
 		if ( this.panel.classList.contains( 'maximized' ) ) {
@@ -458,47 +898,37 @@ export class Profiler extends EventDispatcher {
 			this.panel.classList.remove( 'maximized' );
 			this.domElement.classList.remove( 'maximized' );
 
-			// Restore size based on current position
-			if ( this.position === 'bottom' ) {
-
-				this.panel.style.height = `${ this.lastHeightBottom }px`;
-				this.panel.style.width = '100%';
-
-			} else if ( this.position === 'right' ) {
-
-				this.panel.style.height = '100%';
-				this.panel.style.width = `${ this.lastWidthRight }px`;
-
-			}
+			this.applyRestoredSize();
 
 			this.maximizeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
 
 		} else {
 
-			// Save current size before maximizing
-			if ( this.position === 'bottom' ) {
-
-				this.lastHeightBottom = this.panel.offsetHeight;
-
-			} else if ( this.position === 'right' ) {
-
-				this.lastWidthRight = this.panel.offsetWidth;
-
-			}
+			this.saveCurrentSize();
 
 			this.panel.classList.add( 'maximized' );
 			this.domElement.classList.add( 'maximized' );
 
-			// Maximize based on current position
-			if ( this.position === 'bottom' ) {
+			if ( this.position === 'bottom' || this.position === 'top' ) {
 
 				this.panel.style.height = '100vh';
 				this.panel.style.width = '100%';
+				this.panel.style.left = '0';
+				this.panel.style.right = '0';
 
-			} else if ( this.position === 'right' ) {
+			} else if ( this.position === 'right' || this.position === 'left' ) {
 
 				this.panel.style.height = '100%';
 				this.panel.style.width = '100vw';
+				this.panel.style.top = '0';
+				this.panel.style.bottom = '0';
+
+			} else if ( this.position === 'floating' ) {
+
+				this.panel.style.left = '0';
+				this.panel.style.top = '0';
+				this.panel.style.width = '100vw';
+				this.panel.style.height = '100vh';
 
 			}
 
@@ -507,6 +937,57 @@ export class Profiler extends EventDispatcher {
 		}
 
 		this.dispatchEvent( { type: 'resize' } );
+
+	}
+
+	applyRestoredSize() {
+
+		if ( this.position === 'bottom' ) {
+
+			this.panel.style.height = `${ this.lastHeightBottom }px`;
+			this.panel.style.width = '100%';
+			this.panel.style.left = '0';
+			this.panel.style.right = '0';
+			this.panel.style.bottom = '0';
+			this.panel.style.top = '';
+
+		} else if ( this.position === 'top' ) {
+
+			this.panel.style.height = `${ this.lastHeightTop }px`;
+			this.panel.style.width = '100%';
+			this.panel.style.left = '0';
+			this.panel.style.right = '0';
+			this.panel.style.top = '0';
+			this.panel.style.bottom = '';
+
+		} else if ( this.position === 'right' ) {
+
+			this.panel.style.height = '100%';
+			this.panel.style.width = `${ this.lastWidthRight }px`;
+			this.panel.style.top = '0';
+			this.panel.style.bottom = '0';
+			this.panel.style.right = '0';
+			this.panel.style.left = '';
+
+		} else if ( this.position === 'left' ) {
+
+			this.panel.style.height = '100%';
+			this.panel.style.width = `${ this.lastWidthLeft }px`;
+			this.panel.style.top = '0';
+			this.panel.style.bottom = '0';
+			this.panel.style.left = '0';
+			this.panel.style.right = '';
+
+		} else if ( this.position === 'floating' ) {
+
+			this.panel.style.width = `${ this.lastWidthFloating }px`;
+			this.panel.style.height = `${ this.lastHeightFloating }px`;
+			this.panel.style.left = `${ this.floatingLeft }px`;
+			this.panel.style.top = `${ this.floatingTop }px`;
+			this.panel.style.right = 'auto';
+			this.panel.style.bottom = 'auto';
+
+		}
 
 	}
 
@@ -786,14 +1267,18 @@ export class Profiler extends EventDispatcher {
 			}
 
 			// No tabs visible - set to minimum size
-			if ( this.position === 'bottom' ) {
+			if ( this.position === 'bottom' || this.position === 'top' ) {
 
 				this.panel.style.height = '32px';
 
-			} else if ( this.position === 'right' ) {
+			} else if ( this.position === 'right' || this.position === 'left' ) {
 
 				// 45px = width of one button column
 				this.panel.style.width = '45px';
+
+			} else if ( this.position === 'floating' ) {
+
+				this.panel.style.height = '32px';
 
 			}
 
@@ -813,12 +1298,40 @@ export class Profiler extends EventDispatcher {
 
 					}
 
+				} else if ( this.position === 'top' ) {
+
+					const currentHeight = parseInt( this.panel.style.height );
+					if ( currentHeight === 32 || currentHeight === 38 ) {
+
+						this.panel.style.height = `${ this.lastHeightTop }px`;
+
+					}
+
 				} else if ( this.position === 'right' ) {
 
 					const currentWidth = parseInt( this.panel.style.width );
 					if ( currentWidth === 45 ) {
 
 						this.panel.style.width = `${ this.lastWidthRight }px`;
+
+					}
+
+				} else if ( this.position === 'left' ) {
+
+					const currentWidth = parseInt( this.panel.style.width );
+					if ( currentWidth === 45 ) {
+
+						this.panel.style.width = `${ this.lastWidthLeft }px`;
+
+					}
+
+				} else if ( this.position === 'floating' ) {
+
+					const currentHeight = parseInt( this.panel.style.height );
+					if ( currentHeight === 32 || currentHeight === 38 ) {
+
+						this.panel.style.height = `${ this.lastHeightFloating }px`;
+						this.panel.style.width = `${ this.lastWidthFloating }px`;
 
 					}
 
@@ -1696,81 +2209,175 @@ export class Profiler extends EventDispatcher {
 
 	togglePosition() {
 
-		const newPosition = this.position === 'bottom' ? 'right' : 'bottom';
-		this.setPosition( newPosition );
+		const currentIndex = this.positions.indexOf( this.position );
+		const nextIndex = ( currentIndex + 1 ) % this.positions.length;
+		this.setPosition( this.positions[ nextIndex ] );
+
+	}
+
+	getNextPosition() {
+
+		const currentIndex = this.positions.indexOf( this.position );
+		return this.positions[ ( currentIndex + 1 ) % this.positions.length ];
+
+	}
+
+	getPositionIcon( position ) {
+
+		const icons = {
+			bottom: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 15h18"></path></svg>',
+			right: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>',
+			top: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18"></path></svg>',
+			left: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>',
+			floating: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect></svg>'
+		};
+
+		return icons[ position ] || icons.bottom;
+
+	}
+
+	getPositionTitle( position ) {
+
+		const titles = {
+			bottom: 'Switch to Bottom',
+			right: 'Switch to Right Side',
+			top: 'Switch to Top',
+			left: 'Switch to Left Side',
+			floating: 'Switch to Floating'
+		};
+
+		return titles[ position ] || titles.bottom;
+
+	}
+
+	updatePositionButton() {
+
+		const next = this.getNextPosition();
+		this.floatingBtn.innerHTML = this.getPositionIcon( next );
+		this.floatingBtn.title = this.getPositionTitle( next );
+
+		if ( this.position === 'floating' ) {
+
+			this.floatingBtn.classList.add( 'active' );
+
+		} else {
+
+			this.floatingBtn.classList.remove( 'active' );
+
+		}
+
+	}
+
+	clearPositionChrome() {
+
+		this.panel.classList.remove( 'position-bottom', 'position-right', 'position-top', 'position-left', 'position-floating' );
+		this.toggleButton.classList.remove( 'position-right', 'position-left', 'position-top', 'position-floating' );
+		this.miniPanel.classList.remove( 'position-right', 'position-left', 'position-top', 'position-floating' );
 
 	}
 
 	setPosition( targetPosition ) {
 
 		if ( this.position === targetPosition ) return;
+		if ( this.positions.indexOf( targetPosition ) === - 1 ) return;
 
 		this.panel.style.transition = 'none';
 
-		// Check if panel is currently maximized
 		const isMaximized = this.panel.classList.contains( 'maximized' );
 
+		// Save size of the position we are leaving
+		if ( ! isMaximized && ! this.panel.classList.contains( 'no-tabs' ) ) {
+
+			this.saveCurrentSize();
+
+		}
+
+		this.position = targetPosition;
+		this.clearPositionChrome();
+		this.panel.classList.add( `position-${ targetPosition }` );
+
+		// Move toggle/mini chrome away from the docked panel edge
 		if ( targetPosition === 'right' ) {
 
-			this.position = 'right';
-			this.floatingBtn.classList.add( 'active' );
-			this.floatingBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 15h18"></path></svg>';
-			this.floatingBtn.title = 'Switch to Bottom';
-
-			// Apply right position styles
-			this.panel.classList.remove( 'position-bottom' );
-			this.panel.classList.add( 'position-right' );
 			this.toggleButton.classList.add( 'position-right' );
 			this.miniPanel.classList.add( 'position-right' );
-			this.panel.style.bottom = '';
-			this.panel.style.top = '0';
-			this.panel.style.right = '0';
-			this.panel.style.left = '';
 
-			// Apply size based on maximized state
-			if ( isMaximized ) {
+		} else if ( targetPosition === 'left' ) {
+
+			this.toggleButton.classList.add( 'position-left' );
+			this.miniPanel.classList.add( 'position-left' );
+
+		} else if ( targetPosition === 'top' ) {
+
+			this.toggleButton.classList.add( 'position-top' );
+			this.miniPanel.classList.add( 'position-top' );
+
+		} else if ( targetPosition === 'floating' ) {
+
+			this.toggleButton.classList.add( 'position-floating' );
+			this.miniPanel.classList.add( 'position-floating' );
+
+		}
+
+		this.panel.style.top = '';
+		this.panel.style.right = '';
+		this.panel.style.bottom = '';
+		this.panel.style.left = '';
+		this.panel.style.width = '';
+		this.panel.style.height = '';
+
+		if ( isMaximized ) {
+
+			if ( targetPosition === 'bottom' || targetPosition === 'top' ) {
+
+				this.panel.style.width = '100%';
+				this.panel.style.height = '100vh';
+				this.panel.style.left = '0';
+				this.panel.style.right = '0';
+
+				if ( targetPosition === 'bottom' ) {
+
+					this.panel.style.bottom = '0';
+
+				} else {
+
+					this.panel.style.top = '0';
+
+				}
+
+			} else if ( targetPosition === 'right' || targetPosition === 'left' ) {
 
 				this.panel.style.width = '100vw';
 				this.panel.style.height = '100%';
+				this.panel.style.top = '0';
+				this.panel.style.bottom = '0';
+
+				if ( targetPosition === 'right' ) {
+
+					this.panel.style.right = '0';
+
+				} else {
+
+					this.panel.style.left = '0';
+
+				}
 
 			} else {
 
-				this.panel.style.width = `${ this.lastWidthRight }px`;
-				this.panel.style.height = '100%';
+				this.panel.style.left = '0';
+				this.panel.style.top = '0';
+				this.panel.style.width = '100vw';
+				this.panel.style.height = '100vh';
 
 			}
 
 		} else {
 
-			this.position = 'bottom';
-			this.floatingBtn.classList.remove( 'active' );
-			this.floatingBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>';
-			this.floatingBtn.title = 'Switch to Right Side';
-
-			// Apply bottom position styles
-			this.panel.classList.remove( 'position-right' );
-			this.panel.classList.add( 'position-bottom' );
-			this.toggleButton.classList.remove( 'position-right' );
-			this.miniPanel.classList.remove( 'position-right' );
-			this.panel.style.top = '';
-			this.panel.style.right = '';
-			this.panel.style.bottom = '0';
-			this.panel.style.left = '0';
-
-			// Apply size based on maximized state
-			if ( isMaximized ) {
-
-				this.panel.style.width = '100%';
-				this.panel.style.height = '100vh';
-
-			} else {
-
-				this.panel.style.width = '100%';
-				this.panel.style.height = `${ this.lastHeightBottom }px`;
-
-			}
+			this.applyRestoredSize();
 
 		}
+
+		this.updatePositionButton();
 
 		// Re-enable transition after a brief delay
 		setTimeout( () => {
@@ -1779,10 +2386,7 @@ export class Profiler extends EventDispatcher {
 
 		}, 50 );
 
-		// Update panel size based on visible tabs
 		this.updatePanelSize();
-
-		// Save layout after position change
 		this.saveLayout();
 
 	}
@@ -1794,7 +2398,16 @@ export class Profiler extends EventDispatcher {
 		const layout = {
 			position: this.position,
 			lastHeightBottom: this.lastHeightBottom,
+			lastHeightTop: this.lastHeightTop,
 			lastWidthRight: this.lastWidthRight,
+			lastWidthLeft: this.lastWidthLeft,
+			lastWidthFloating: this.lastWidthFloating,
+			lastHeightFloating: this.lastHeightFloating,
+			floatingLeft: this.floatingLeft,
+			floatingTop: this.floatingTop,
+			miniPanelMoved: this.miniPanelMoved,
+			miniLeft: this.miniLeft,
+			miniTop: this.miniTop,
 			activeTabId: this.activeTabId,
 			detachedTabs: [],
 			isVisible: this.panel.classList.contains( 'visible' )
@@ -1913,7 +2526,7 @@ export class Profiler extends EventDispatcher {
 			}
 
 			// Restore position and dimensions
-			if ( layout.position ) {
+			if ( layout.position && this.positions.indexOf( layout.position ) !== - 1 ) {
 
 				this.position = layout.position;
 
@@ -1925,9 +2538,53 @@ export class Profiler extends EventDispatcher {
 
 			}
 
+			if ( layout.lastHeightTop ) {
+
+				this.lastHeightTop = layout.lastHeightTop;
+
+			}
+
 			if ( layout.lastWidthRight ) {
 
 				this.lastWidthRight = layout.lastWidthRight;
+
+			}
+
+			if ( layout.lastWidthLeft ) {
+
+				this.lastWidthLeft = layout.lastWidthLeft;
+
+			}
+
+			if ( layout.lastWidthFloating ) {
+
+				this.lastWidthFloating = layout.lastWidthFloating;
+
+			}
+
+			if ( layout.lastHeightFloating ) {
+
+				this.lastHeightFloating = layout.lastHeightFloating;
+
+			}
+
+			if ( layout.floatingLeft !== undefined ) {
+
+				this.floatingLeft = layout.floatingLeft;
+
+			}
+
+			if ( layout.floatingTop !== undefined ) {
+
+				this.floatingTop = layout.floatingTop;
+
+			}
+
+			if ( layout.miniPanelMoved ) {
+
+				this.miniPanelMoved = true;
+				this.miniLeft = layout.miniLeft !== undefined ? layout.miniLeft : 15;
+				this.miniTop = layout.miniTop !== undefined ? layout.miniTop : 60;
 
 			}
 
@@ -1941,33 +2598,75 @@ export class Profiler extends EventDispatcher {
 
 			}
 
+			if ( this.lastHeightTop > windowHeight - 50 ) {
+
+				this.lastHeightTop = windowHeight - 50;
+
+			}
+
 			if ( this.lastWidthRight > windowWidth - 50 ) {
 
 				this.lastWidthRight = windowWidth - 50;
 
 			}
 
+			if ( this.lastWidthLeft > windowWidth - 50 ) {
+
+				this.lastWidthLeft = windowWidth - 50;
+
+			}
+
+			if ( this.lastWidthFloating > windowWidth - 50 ) {
+
+				this.lastWidthFloating = windowWidth - 50;
+
+			}
+
+			if ( this.lastHeightFloating > windowHeight - 50 ) {
+
+				this.lastHeightFloating = windowHeight - 50;
+
+			}
+
 			// Apply the saved position after shell is set up
+			this.clearPositionChrome();
+			this.panel.classList.add( `position-${ this.position }` );
+
 			if ( this.position === 'right' ) {
 
-				this.floatingBtn.classList.add( 'active' );
-				this.floatingBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 15h18"></path></svg>';
-				this.floatingBtn.title = 'Switch to Bottom';
-
-				this.panel.classList.remove( 'position-bottom' );
-				this.panel.classList.add( 'position-right' );
 				this.toggleButton.classList.add( 'position-right' );
 				this.miniPanel.classList.add( 'position-right' );
-				this.panel.style.bottom = '';
-				this.panel.style.top = '0';
-				this.panel.style.right = '0';
-				this.panel.style.left = '';
-				this.panel.style.width = `${ this.lastWidthRight }px`;
-				this.panel.style.height = '100%';
 
-			} else {
+			} else if ( this.position === 'left' ) {
 
-				this.panel.style.height = `${ this.lastHeightBottom }px`;
+				this.toggleButton.classList.add( 'position-left' );
+				this.miniPanel.classList.add( 'position-left' );
+
+			} else if ( this.position === 'top' ) {
+
+				this.toggleButton.classList.add( 'position-top' );
+				this.miniPanel.classList.add( 'position-top' );
+
+			} else if ( this.position === 'floating' ) {
+
+				this.toggleButton.classList.add( 'position-floating' );
+				this.miniPanel.classList.add( 'position-floating' );
+
+			}
+
+			this.applyRestoredSize();
+			this.updatePositionButton();
+
+			if ( this.position === 'floating' ) {
+
+				this.constrainFloatingPanel();
+
+			}
+
+			if ( this.miniPanelMoved ) {
+
+				this.applyMiniPanelPosition( this.miniLeft, this.miniTop );
+				this.constrainMiniPanel();
 
 			}
 
