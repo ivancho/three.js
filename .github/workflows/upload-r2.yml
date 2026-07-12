@@ -26,6 +26,11 @@ on:
         required: false
         type: string
         default: ''
+      public_base_url:
+        description: Public URL prefix for DESTINATION_FOLDER (used for Cloudflare cache purge)
+        required: false
+        type: string
+        default: ''
   push:
     branches:
       - conics
@@ -48,6 +53,9 @@ jobs:
       PATH_PREFIX: ${{ github.event.inputs.path_prefix || vars.R2_UPLOAD_PATH_PREFIX || '' }}
       PATH_REWRITES: ${{ github.event.inputs.path_rewrites || vars.R2_PATH_REWRITES || '{}' }}
       PATH_IGNORE: ${{ github.event.inputs.ignore || vars.R2_IGNORE || '' }}
+      R2_PUBLIC_BASE_URL: ${{ github.event.inputs.public_base_url || vars.R2_PUBLIC_BASE_URL || '' }}
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ZONE_ID: ${{ secrets.CF_ZONE_ID || vars.CF_ZONE_ID }}
     steps:
       - name: Git checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -93,6 +101,17 @@ jobs:
           print(f"Ignore patterns ({len(ignore_lines)}):")
           for line in ignore_lines:
               print(f"  {line}")
+
+          public_base = os.environ.get("R2_PUBLIC_BASE_URL") or ""
+          cf_token = os.environ.get("CF_API_TOKEN") or ""
+          cf_zone = os.environ.get("CF_ZONE_ID") or ""
+          if public_base and cf_token and cf_zone:
+              print(f"Cloudflare purge enabled for: {public_base.rstrip('/')}/...")
+          else:
+              print(
+                  "Cloudflare purge not fully configured "
+                  "(needs CF_API_TOKEN, CF_ZONE_ID, R2_PUBLIC_BASE_URL); will skip after upload."
+              )
           PY
 
       - name: Collect changed files
@@ -242,6 +261,7 @@ jobs:
           PY
 
       - name: Upload to R2
+        id: upload
         if: steps.changed.outputs.has_files == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -272,6 +292,24 @@ jobs:
               part for part in (destination, ".r2-upload-backup", run_id) if part
           )
 
+          # Overwrite-in-place deploys: keep browser/CDN from serving stale copies.
+          NO_CACHE = "no-cache"
+          SHORT_CACHE = "public, max-age=300"
+          NO_CACHE_EXTS = {
+              ".html", ".htm",
+              ".js", ".mjs", ".cjs", ".css",
+              ".json", ".map", ".wasm", ".svg",
+              ".txt", ".xml", ".webmanifest",
+          }
+
+
+          def cache_control_for(path):
+              ext = os.path.splitext(path)[1].lower()
+              if ext in NO_CACHE_EXTS:
+                  return NO_CACHE
+              return SHORT_CACHE
+
+
           mappings = []
           with open("upload_mappings.tsv", encoding="utf-8") as handle:
               for line in handle:
@@ -288,6 +326,7 @@ jobs:
                           "staging": staging_key,
                           "backup": backup_key,
                           "remote": remote,
+                          "cache_control": cache_control_for(local_path),
                       }
                   )
 
@@ -351,27 +390,37 @@ jobs:
                       )
                       backed_up.append(item)
 
-              print("Uploading all files to staging...")
+              print("Uploading all files to staging with Cache-Control...")
               for item in mappings:
                   run_aws(
                       [
                           "cp",
                           item["local"],
                           f"s3://{bucket}/{item['staging']}",
+                          "--cache-control",
+                          item["cache_control"],
                       ]
                   )
+                  print(f"  Cache-Control: {item['cache_control']} ({item['local']})")
                   staged.append(item)
 
               print("Promoting staged files to final keys...")
               for item in mappings:
+                  # REPLACE keeps the Cache-Control set on the staged object.
                   run_aws(
                       [
                           "cp",
                           f"s3://{bucket}/{item['staging']}",
                           f"s3://{bucket}/{item['final']}",
+                          "--metadata-directive",
+                          "COPY",
                       ]
                   )
                   promoted.append(item)
+
+              with open("purge_remotes.txt", "w", encoding="utf-8") as out:
+                  for item in mappings:
+                      out.write(item["remote"] + "\n")
 
               print("Cleaning up staging and backup prefixes...")
               delete_prefix(staging_root)
@@ -381,4 +430,83 @@ jobs:
               print(f"Error during atomic upload: {exc}", file=sys.stderr)
               rollback()
               sys.exit(1)
+          PY
+
+      - name: Purge Cloudflare cache
+        if: steps.changed.outputs.has_files == 'true' && steps.upload.outcome == 'success'
+        env:
+          PUBLIC_BASE_URL: ${{ env.R2_PUBLIC_BASE_URL }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ZONE_ID" ] || [ -z "$PUBLIC_BASE_URL" ]; then
+            echo "Skipping Cloudflare purge (set CF_API_TOKEN, CF_ZONE_ID, and R2_PUBLIC_BASE_URL to enable)."
+            echo "  CF_API_TOKEN set: $([ -n "$CF_API_TOKEN" ] && echo yes || echo no)"
+            echo "  CF_ZONE_ID set: $([ -n "$CF_ZONE_ID" ] && echo yes || echo no)"
+            echo "  R2_PUBLIC_BASE_URL set: $([ -n "$PUBLIC_BASE_URL" ] && echo yes || echo no)"
+            exit 0
+          fi
+
+          if [ ! -f purge_remotes.txt ]; then
+            echo "No purge_remotes.txt; nothing to purge."
+            exit 0
+          fi
+
+          export PUBLIC_BASE_URL
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          token = os.environ["CF_API_TOKEN"]
+          zone_id = os.environ["CF_ZONE_ID"]
+          base = os.environ["PUBLIC_BASE_URL"].rstrip("/")
+
+          urls = []
+          with open("purge_remotes.txt", encoding="utf-8") as handle:
+              for line in handle:
+                  remote = line.strip().lstrip("/")
+                  if not remote:
+                      continue
+                  urls.append(f"{base}/{remote}")
+
+          if not urls:
+              print("No URLs to purge.")
+              sys.exit(0)
+
+          print(f"Purging {len(urls)} URL(s) from Cloudflare zone {zone_id}:")
+          for url in urls:
+              print(f"  {url}")
+
+          # Free plans allow 30 URLs per purge request.
+          batch_size = 30
+          endpoint = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache"
+
+          for i in range(0, len(urls), batch_size):
+              batch = urls[i : i + batch_size]
+              body = json.dumps({"files": batch}).encode("utf-8")
+              request = urllib.request.Request(
+                  endpoint,
+                  data=body,
+                  method="POST",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")
+                  print(f"Cloudflare purge failed ({exc.code}): {detail}", file=sys.stderr)
+                  sys.exit(1)
+
+              if not payload.get("success"):
+                  print(f"Cloudflare purge unsuccessful: {payload}", file=sys.stderr)
+                  sys.exit(1)
+
+              print(f"Purged batch {i // batch_size + 1} ({len(batch)} URL(s)).")
+
+          print("Cloudflare cache purge complete.")
           PY
