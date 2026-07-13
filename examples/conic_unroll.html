@@ -204,7 +204,30 @@
                         }
 
                         .list-item > div:nth-child(1).paint-cursor {
-                                cursor: crosshair;
+                                cursor: none;
+                        }
+
+                        #paint-brush-cursor {
+                                position: fixed;
+                                pointer-events: none;
+                                border: 1px solid rgba( 0, 0, 0, 0.6 );
+                                border-radius: 50%;
+                                box-sizing: border-box;
+                                transform: translate( -50%, -50% );
+                                display: none;
+                                z-index: 10000;
+                        }
+
+                        #paint-brush-cursor::after {
+                                content: '';
+                                position: absolute;
+                                left: 50%;
+                                top: 50%;
+                                width: 1px;
+                                height: 1px;
+                                margin: -0.5px 0 0 -0.5px;
+                                background: rgba( 0, 0, 0, 0.6 );
+                                border-radius: 50%;
                         }
 
                         #info .info-help {
@@ -310,7 +333,7 @@
                                                         Peeled redo tails are kept in IndexedDB so undoing a branch-point edit can restore them. 
                                                         Save with a name to store a separate named history. 
                                                         Select a name and version to restore.</p>
-                                                <p>Download SVG of the unrolled pattern to print.</p>
+                                                <p>Download SVG of the unrolled pattern to print (includes paint).</p>
                                         </span>
                                 </span>
                         </div>
@@ -698,6 +721,9 @@ import * as THREE from 'three/webgpu';
                                 let activePaintStroke = null;
                                 let paintToolButton = null;
                                 let paintColorInput = null;
+                                let paintBrushCursorEl = null;
+                                let lastPaintCursorClient = null;
+                                let updatePaintBrushCursorAt = function () {};
                                 const paintEditors = {};
                                 let coneTransformControls = null;
                                 let moveToolButton = null;
@@ -2837,6 +2863,11 @@ import * as THREE from 'three/webgpu';
                                         set brushSize( v ) {
 
                                                 paintBrushSize = v;
+                                                if ( paintMode && lastPaintCursorClient ) {
+
+                                                        updatePaintBrushCursorAt( lastPaintCursorClient.x, lastPaintCursorClient.y );
+
+                                                }
 
                                         },
                                         get softness() {
@@ -3334,7 +3365,24 @@ import * as THREE from 'three/webgpu';
 
                                         }
 
+                                        if ( ! paintMode ) {
+
+                                                hidePaintBrushCursor();
+
+                                        } else if ( lastPaintCursorClient ) {
+
+                                                updatePaintBrushCursorAt( lastPaintCursorClient.x, lastPaintCursorClient.y );
+
+                                        }
+
                                         requestRender();
+
+                                }
+
+                                function hidePaintBrushCursor() {
+
+                                        lastPaintCursorClient = null;
+                                        if ( paintBrushCursorEl ) paintBrushCursorEl.style.display = 'none';
 
                                 }
 
@@ -3402,24 +3450,172 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                // Cone UVs are anisotropic: u is angle, v is generator fraction.
+                                // Brush size is a fraction of slant length so stamps stay circular on the pattern/cone.
+                                function getPaintBrushWorldRadius( brushSize ) {
+
+                                        const slant = Math.max( 1e-6, coneRadius * getConeDevelopableK( coneAngle ) );
+                                        return Math.max( 1e-6, ( brushSize != null ? brushSize : paintBrushSize ) * slant );
+
+                                }
+
+                                function getPaintUvRadii( v, brushSize ) {
+
+                                        const slant = Math.max( 1e-6, coneRadius * getConeDevelopableK( coneAngle ) );
+                                        const brushWorld = getPaintBrushWorldRadius( brushSize );
+                                        const r = coneRadius * ( 1 - v );
+                                        // Near the tip circumferential scale collapses; keep the stamp finite.
+                                        const su = 2 * Math.PI * Math.max( Math.abs( r ), brushWorld * 0.25 );
+                                        return {
+                                                brushWorld: brushWorld,
+                                                radiusU: brushWorld / su,
+                                                radiusV: brushWorld / slant
+                                        };
+
+                                }
+
+                                function distanceSqPointToSegment2D( px, pz, ax, az, bx, bz ) {
+
+                                        const abx = bx - ax;
+                                        const abz = bz - az;
+                                        const apx = px - ax;
+                                        const apz = pz - az;
+                                        const abLenSq = abx * abx + abz * abz;
+                                        let t = abLenSq > 0 ? ( apx * abx + apz * abz ) / abLenSq : 0;
+                                        t = Math.max( 0, Math.min( 1, t ) );
+                                        const dx = ax + abx * t - px;
+                                        const dz = az + abz * t - pz;
+                                        return dx * dx + dz * dz;
+
+                                }
+
+                                function pointInTriangle2D( px, pz, ax, az, bx, bz, cx, cz ) {
+
+                                        const v0x = cx - ax;
+                                        const v0z = cz - az;
+                                        const v1x = bx - ax;
+                                        const v1z = bz - az;
+                                        const v2x = px - ax;
+                                        const v2z = pz - az;
+                                        const dot00 = v0x * v0x + v0z * v0z;
+                                        const dot01 = v0x * v1x + v0z * v1z;
+                                        const dot02 = v0x * v2x + v0z * v2z;
+                                        const dot11 = v1x * v1x + v1z * v1z;
+                                        const dot12 = v1x * v2x + v1z * v2z;
+                                        const denom = dot00 * dot11 - dot01 * dot01;
+                                        if ( Math.abs( denom ) < 1e-20 ) return false;
+                                        const inv = 1 / denom;
+                                        const u = ( dot11 * dot02 - dot01 * dot12 ) * inv;
+                                        const v = ( dot00 * dot12 - dot01 * dot02 ) * inv;
+                                        return u >= 0 && v >= 0 && ( u + v ) <= 1;
+
+                                }
+
+                                function distanceSqPointToTriangleXZ( px, pz, ax, az, bx, bz, cx, cz ) {
+
+                                        if ( pointInTriangle2D( px, pz, ax, az, bx, bz, cx, cz ) ) return 0;
+                                        return Math.min(
+                                                distanceSqPointToSegment2D( px, pz, ax, az, bx, bz ),
+                                                distanceSqPointToSegment2D( px, pz, bx, bz, cx, cz ),
+                                                distanceSqPointToSegment2D( px, pz, cx, cz, ax, az )
+                                        );
+
+                                }
+
+                                function flatLocalBrushOverlapsPattern( geometry, localX, localZ, brushWorld ) {
+
+                                        if ( ! geometry ) return false;
+                                        if ( ! geometry.boundingBox ) geometry.computeBoundingBox();
+                                        const bb = geometry.boundingBox;
+                                        if ( ! bb ) return false;
+
+                                        const r = brushWorld;
+                                        if (
+                                                localX < bb.min.x - r || localX > bb.max.x + r ||
+                                                localZ < bb.min.z - r || localZ > bb.max.z + r
+                                        ) {
+
+                                                return false;
+
+                                        }
+
+                                        const rSq = r * r;
+                                        const pos = geometry.getAttribute( 'position' );
+                                        if ( ! pos ) return false;
+                                        const idx = geometry.index;
+
+                                        function triOverlaps( i0, i1, i2 ) {
+
+                                                return distanceSqPointToTriangleXZ(
+                                                        localX, localZ,
+                                                        pos.getX( i0 ), pos.getZ( i0 ),
+                                                        pos.getX( i1 ), pos.getZ( i1 ),
+                                                        pos.getX( i2 ), pos.getZ( i2 )
+                                                ) <= rSq;
+
+                                        }
+
+                                        if ( idx ) {
+
+                                                for ( let i = 0; i < idx.count; i += 3 ) {
+
+                                                        if ( triOverlaps( idx.getX( i ), idx.getX( i + 1 ), idx.getX( i + 2 ) ) ) return true;
+
+                                                }
+
+                                        } else {
+
+                                                for ( let i = 0; i + 2 < pos.count; i += 3 ) {
+
+                                                        if ( triOverlaps( i, i + 1, i + 2 ) ) return true;
+
+                                                }
+
+                                        }
+
+                                        return false;
+
+                                }
+
+                                function flatLocalToPaintUv( localX, localZ, flatGeometry ) {
+
+                                        const offset = getFlatDevelopableOffset( flatGeometry );
+                                        const surface = flatPointToConeSurface(
+                                                localX + offset.x,
+                                                localZ + offset.z,
+                                                { coneAngle: coneAngle, height: coneHeight, radius: coneRadius }
+                                        );
+                                        let u = surface.u;
+                                        u = u - Math.floor( u );
+                                        return { u: u, v: surface.v };
+
+                                }
+
                                 function stampPaintAtUv( u, v, stroke ) {
 
                                         u = ( ( u % 1 ) + 1 ) % 1;
-                                        v = Math.min( 1, Math.max( 0, v ) );
+                                        // Keep v unclamped so a brush centered outside the pattern can still
+                                        // paint the overlapping edge in texture space.
 
                                         const x = u * PAINT_MAP_SIZE;
                                         const y = ( 1 - v ) * PAINT_MAP_SIZE;
-                                        const radius = Math.max( 1, ( stroke.brushSize != null ? stroke.brushSize : paintBrushSize ) * PAINT_MAP_SIZE );
+                                        const brushSize = stroke.brushSize != null ? stroke.brushSize : paintBrushSize;
+                                        const radii = getPaintUvRadii( v, brushSize );
+                                        const rx = Math.max( 1, radii.radiusU * PAINT_MAP_SIZE );
+                                        const ry = Math.max( 1, radii.radiusV * PAINT_MAP_SIZE );
+
+                                        if ( y + ry < 0 || y - ry > PAINT_MAP_SIZE ) return;
+
                                         const softness = Math.min( 1, Math.max( 0, stroke.softness != null ? stroke.softness : paintBrushSoftness ) );
-                                        const innerRadius = radius * ( 1 - softness ) * 0.999;
+                                        const innerRadius = ( 1 - softness ) * 0.999;
                                         const brush = new THREE.Color( stroke.color != null ? stroke.color : paintColor );
                                         const rgb = `${ Math.round( brush.r * 255 ) },${ Math.round( brush.g * 255 ) },${ Math.round( brush.b * 255 ) }`;
                                         const opacityByte = Math.round( Math.min( 1, Math.max( 0, stroke.opacity != null ? stroke.opacity : paintOpacity ) ) * 255 );
                                         const erase = !! stroke.erase;
 
                                         const offsets = [ 0 ];
-                                        if ( x - radius < 0 ) offsets.push( PAINT_MAP_SIZE );
-                                        if ( x + radius > PAINT_MAP_SIZE ) offsets.push( - PAINT_MAP_SIZE );
+                                        if ( x - rx < 0 ) offsets.push( PAINT_MAP_SIZE );
+                                        if ( x + rx > PAINT_MAP_SIZE ) offsets.push( - PAINT_MAP_SIZE );
 
                                         function stampOnContext( ctx, centerColor, edgeColor, composite ) {
 
@@ -3429,13 +3625,17 @@ import * as THREE from 'three/webgpu';
                                                 for ( let i = 0; i < offsets.length; i ++ ) {
 
                                                         const cx = x + offsets[ i ];
-                                                        const gradient = ctx.createRadialGradient( cx, y, innerRadius, cx, y, radius );
+                                                        ctx.save();
+                                                        ctx.translate( cx, y );
+                                                        ctx.scale( rx, ry );
+                                                        const gradient = ctx.createRadialGradient( 0, 0, innerRadius, 0, 0, 1 );
                                                         gradient.addColorStop( 0, centerColor );
                                                         gradient.addColorStop( 1, edgeColor );
                                                         ctx.fillStyle = gradient;
                                                         ctx.beginPath();
-                                                        ctx.arc( cx, y, radius, 0, Math.PI * 2 );
+                                                        ctx.arc( 0, 0, 1, 0, Math.PI * 2 );
                                                         ctx.fill();
+                                                        ctx.restore();
 
                                                 }
 
@@ -3471,17 +3671,22 @@ import * as THREE from 'three/webgpu';
                                         if ( du > 0.5 ) du -= 1;
                                         if ( du < - 0.5 ) du += 1;
                                         const dv = v1 - v0;
-                                        const dist = Math.hypot( du, dv );
                                         const brushSize = stroke.brushSize != null ? stroke.brushSize : paintBrushSize;
+                                        const midV = ( v0 + v1 ) * 0.5;
+                                        const radii = getPaintUvRadii( midV, brushSize );
+                                        const slant = Math.max( 1e-6, coneRadius * getConeDevelopableK( coneAngle ) );
+                                        const rMid = coneRadius * ( 1 - midV );
+                                        const su = 2 * Math.PI * Math.max( Math.abs( rMid ), radii.brushWorld * 0.25 );
+                                        const dist = Math.hypot( du * su, dv * slant );
 
-                                        if ( dist > Math.max( 0.2, brushSize * 4 ) ) {
+                                        if ( dist > Math.max( slant * 0.2, radii.brushWorld * 4 ) ) {
 
                                                 stampPaintAtUv( u1, v1, stroke );
                                                 return;
 
                                         }
 
-                                        const steps = Math.max( 1, Math.ceil( dist / ( brushSize * 0.35 ) ) );
+                                        const steps = Math.max( 1, Math.ceil( dist / ( radii.brushWorld * 0.35 ) ) );
 
                                         for ( let i = 0; i <= steps; i ++ ) {
 
@@ -3630,10 +3835,184 @@ import * as THREE from 'three/webgpu';
 
                                                 const paintRaycaster = new THREE.Raycaster();
                                                 const paintPointerNdc = new THREE.Vector2();
+                                                const paintFlatPlane = new THREE.Plane();
+                                                const _paintLocal = new THREE.Vector3();
+                                                const _paintEdge = new THREE.Vector3();
+                                                const _paintNdc = new THREE.Vector3();
+                                                const _paintPlanePoint = new THREE.Vector3();
+                                                const _paintPlaneNormal = new THREE.Vector3();
                                                 let isPainting = false;
                                                 let paintPointerId = null;
                                                 let lastPaintUv = null;
                                                 let paintOrbitWasEnabled = true;
+
+                                                paintBrushCursorEl = document.createElement( 'div' );
+                                                paintBrushCursorEl.id = 'paint-brush-cursor';
+                                                document.body.appendChild( paintBrushCursorEl );
+
+                                                function projectClientToFlatPaint( clientX, clientY ) {
+
+                                                        const scene = scenes[ 0 ];
+                                                        const camera = scene && scene.userData.camera;
+                                                        const flatMesh = scene && scene.userData.flattenedMesh;
+                                                        if ( ! camera || ! flatMesh ) return null;
+
+                                                        const rect = coneElement.getBoundingClientRect();
+                                                        if ( rect.width <= 0 || rect.height <= 0 ) return null;
+
+                                                        paintPointerNdc.x = ( ( clientX - rect.left ) / rect.width ) * 2 - 1;
+                                                        paintPointerNdc.y = - ( ( clientY - rect.top ) / rect.height ) * 2 + 1;
+                                                        paintRaycaster.setFromCamera( paintPointerNdc, camera );
+
+                                                        const brushSize = ( isPainting && activePaintStroke && activePaintStroke.brushSize != null )
+                                                                ? activePaintStroke.brushSize
+                                                                : paintBrushSize;
+                                                        const brushWorld = getPaintBrushWorldRadius( brushSize );
+
+                                                        flatMesh.updateMatrixWorld( true );
+
+                                                        const meshHits = paintRaycaster.intersectObject( flatMesh, false );
+                                                        if ( meshHits.length && meshHits[ 0 ].uv ) {
+
+                                                                const hit = meshHits[ 0 ];
+                                                                _paintLocal.copy( hit.point );
+                                                                flatMesh.worldToLocal( _paintLocal );
+                                                                return {
+                                                                        u: hit.uv.x,
+                                                                        v: hit.uv.y,
+                                                                        localX: _paintLocal.x,
+                                                                        localZ: _paintLocal.z,
+                                                                        worldPoint: hit.point.clone(),
+                                                                        overlaps: true,
+                                                                        mesh: flatMesh,
+                                                                        rect: rect
+                                                                };
+
+                                                        }
+
+                                                        _paintPlanePoint.set( 0, 0, 0 );
+                                                        flatMesh.localToWorld( _paintPlanePoint );
+                                                        _paintPlaneNormal.set( 0, 1, 0 ).transformDirection( flatMesh.matrixWorld ).normalize();
+                                                        paintFlatPlane.setFromNormalAndCoplanarPoint( _paintPlaneNormal, _paintPlanePoint );
+
+                                                        if ( ! paintRaycaster.ray.intersectPlane( paintFlatPlane, _paintEdge ) ) return null;
+
+                                                        _paintLocal.copy( _paintEdge );
+                                                        flatMesh.worldToLocal( _paintLocal );
+
+                                                        const overlaps = flatLocalBrushOverlapsPattern(
+                                                                flatMesh.geometry,
+                                                                _paintLocal.x,
+                                                                _paintLocal.z,
+                                                                brushWorld
+                                                        );
+                                                        const uv = flatLocalToPaintUv( _paintLocal.x, _paintLocal.z, flatMesh.geometry );
+
+                                                        return {
+                                                                u: uv.u,
+                                                                v: uv.v,
+                                                                localX: _paintLocal.x,
+                                                                localZ: _paintLocal.z,
+                                                                worldPoint: _paintEdge.clone(),
+                                                                overlaps: overlaps,
+                                                                mesh: flatMesh,
+                                                                rect: rect
+                                                        };
+
+                                                }
+
+                                                function getBrushScreenRadius( worldPoint, mesh, rect ) {
+
+                                                        const camera = scenes[ 0 ].userData.camera;
+                                                        if ( ! mesh || ! camera ) {
+
+                                                                return Math.max( 2, paintBrushSize * Math.min( rect.width, rect.height ) );
+
+                                                        }
+
+                                                        const brushWorld = getPaintBrushWorldRadius( paintBrushSize );
+                                                        _paintLocal.copy( worldPoint );
+                                                        mesh.worldToLocal( _paintLocal );
+                                                        _paintPlanePoint.copy( _paintLocal );
+                                                        _paintPlanePoint.x += brushWorld;
+                                                        mesh.localToWorld( _paintLocal );
+                                                        mesh.localToWorld( _paintPlanePoint );
+
+                                                        function projectToClient( worldPt ) {
+
+                                                                _paintNdc.copy( worldPt ).project( camera );
+                                                                return {
+                                                                        x: ( _paintNdc.x * 0.5 + 0.5 ) * rect.width + rect.left,
+                                                                        y: ( - _paintNdc.y * 0.5 + 0.5 ) * rect.height + rect.top
+                                                                };
+
+                                                        }
+
+                                                        const screenCenter = projectToClient( _paintLocal );
+                                                        const screenEdge = projectToClient( _paintPlanePoint );
+                                                        return Math.max( 2, Math.hypot( screenEdge.x - screenCenter.x, screenEdge.y - screenCenter.y ) );
+
+                                                }
+
+                                                updatePaintBrushCursorAt = function ( clientX, clientY ) {
+
+                                                        if ( ! paintMode || ! paintBrushCursorEl ) {
+
+                                                                hidePaintBrushCursor();
+                                                                return;
+
+                                                        }
+
+                                                        const hit = projectClientToFlatPaint( clientX, clientY );
+                                                        if ( ! hit ) {
+
+                                                                hidePaintBrushCursor();
+                                                                return;
+
+                                                        }
+
+                                                        const radius = getBrushScreenRadius( hit.worldPoint, hit.mesh, hit.rect );
+                                                        const diameter = radius * 2;
+
+                                                        paintBrushCursorEl.style.display = 'block';
+                                                        paintBrushCursorEl.style.left = `${ clientX }px`;
+                                                        paintBrushCursorEl.style.top = `${ clientY }px`;
+                                                        paintBrushCursorEl.style.width = `${ diameter }px`;
+                                                        paintBrushCursorEl.style.height = `${ diameter }px`;
+                                                        lastPaintCursorClient = { x: clientX, y: clientY };
+
+                                                };
+
+                                                coneElement.addEventListener( 'pointermove', function ( event ) {
+
+                                                        if ( paintMode ) {
+
+                                                                updatePaintBrushCursorAt( event.clientX, event.clientY );
+
+                                                        }
+
+                                                } );
+
+                                                coneElement.addEventListener( 'pointerleave', function () {
+
+                                                        hidePaintBrushCursor();
+
+                                                } );
+
+                                                const paintControls = scenes[ 0 ] && scenes[ 0 ].userData.controls;
+                                                if ( paintControls ) {
+
+                                                        paintControls.addEventListener( 'change', function () {
+
+                                                                if ( paintMode && lastPaintCursorClient ) {
+
+                                                                        updatePaintBrushCursorAt( lastPaintCursorClient.x, lastPaintCursorClient.y );
+
+                                                                }
+
+                                                        } );
+
+                                                }
 
                                                 function appendActiveStrokePoint( u, v ) {
 
@@ -3655,24 +4034,7 @@ import * as THREE from 'three/webgpu';
 
                                                 function hitFlatPaintUv( event ) {
 
-                                                        const scene = scenes[ 0 ];
-                                                        if ( ! scene ) return null;
-
-                                                        const camera = scene.userData.camera;
-                                                        const flatMesh = scene.userData.flattenedMesh;
-                                                        if ( ! camera || ! flatMesh ) return null;
-
-                                                        const rect = coneElement.getBoundingClientRect();
-                                                        if ( rect.width <= 0 || rect.height <= 0 ) return null;
-
-                                                        paintPointerNdc.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1;
-                                                        paintPointerNdc.y = - ( ( event.clientY - rect.top ) / rect.height ) * 2 + 1;
-                                                        paintRaycaster.setFromCamera( paintPointerNdc, camera );
-
-                                                        const hits = paintRaycaster.intersectObject( flatMesh, false );
-                                                        if ( ! hits.length || ! hits[ 0 ].uv ) return null;
-
-                                                        return hits[ 0 ].uv;
+                                                        return projectClientToFlatPaint( event.clientX, event.clientY );
 
                                                 }
 
@@ -3703,7 +4065,7 @@ import * as THREE from 'three/webgpu';
                                                         if ( paintMode ) {
 
                                                                 const uvHit = hitFlatPaintUv( event );
-                                                                if ( uvHit ) {
+                                                                if ( uvHit && uvHit.overlaps ) {
 
                                                                         const controls = scenes[ 0 ] && scenes[ 0 ].userData.controls;
                                                                         paintOrbitWasEnabled = controls ? controls.enabled : true;
@@ -3717,12 +4079,12 @@ import * as THREE from 'three/webgpu';
                                                                                 erase: !! event.shiftKey,
                                                                                 points: []
                                                                         };
-                                                                        appendActiveStrokePoint( uvHit.x, uvHit.y );
+                                                                        appendActiveStrokePoint( uvHit.u, uvHit.v );
 
                                                                         isPainting = true;
                                                                         paintPointerId = event.pointerId;
-                                                                        lastPaintUv = uvHit.clone();
-                                                                        stampPaintAtUv( uvHit.x, uvHit.y, activePaintStroke );
+                                                                        lastPaintUv = new THREE.Vector2( uvHit.u, uvHit.v );
+                                                                        stampPaintAtUv( uvHit.u, uvHit.v, activePaintStroke );
                                                                         requestRender();
 
                                                                         try {
@@ -3751,21 +4113,21 @@ import * as THREE from 'three/webgpu';
                                                         if ( ! isPainting || event.pointerId !== paintPointerId || ! activePaintStroke ) return;
 
                                                         const uvHit = hitFlatPaintUv( event );
-                                                        if ( ! uvHit ) return;
+                                                        if ( ! uvHit || ! uvHit.overlaps ) return;
 
-                                                        appendActiveStrokePoint( uvHit.x, uvHit.y );
+                                                        appendActiveStrokePoint( uvHit.u, uvHit.v );
 
                                                         if ( lastPaintUv ) {
 
-                                                                paintBetweenUvs( lastPaintUv.x, lastPaintUv.y, uvHit.x, uvHit.y, activePaintStroke );
+                                                                paintBetweenUvs( lastPaintUv.x, lastPaintUv.y, uvHit.u, uvHit.v, activePaintStroke );
 
                                                         } else {
 
-                                                                stampPaintAtUv( uvHit.x, uvHit.y, activePaintStroke );
+                                                                stampPaintAtUv( uvHit.u, uvHit.v, activePaintStroke );
 
                                                         }
 
-                                                        lastPaintUv = uvHit.clone();
+                                                        lastPaintUv = new THREE.Vector2( uvHit.u, uvHit.v );
                                                         requestRender();
 
                                                 } );
@@ -5165,15 +5527,194 @@ import * as THREE from 'three/webgpu';
 
                                         }
 
-                                        return [
+                                        pathData = pathData.trim();
+                                        const strokeWidth = ( Math.max( viewWidth, viewHeight ) * 0.002 ).toFixed( 5 );
+                                        const lines = [
                                                 '<?xml version="1.0" encoding="UTF-8"?>',
-                                                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' +
+                                                '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="' +
                                                         viewMinX.toFixed( 5 ) + ' ' + viewMinY.toFixed( 5 ) + ' ' +
-                                                        viewWidth.toFixed( 5 ) + ' ' + viewHeight.toFixed( 5 ) + '">',
-                                                '  <path d="' + pathData.trim() + '" fill="none" stroke="#000000" stroke-width="' +
-                                                        ( Math.max( viewWidth, viewHeight ) * 0.002 ).toFixed( 5 ) + '" />',
-                                                '</svg>'
-                                        ].join( '\n' );
+                                                        viewWidth.toFixed( 5 ) + ' ' + viewHeight.toFixed( 5 ) + '">'
+                                        ];
+
+                                        const paintHref = rasterizeFlatGeometryPaintDataURL( geometry, minX, maxX, minZ, maxZ );
+                                        if ( paintHref && pathData ) {
+
+                                                lines.push( '  <defs>' );
+                                                lines.push( '    <clipPath id="patternClip">' );
+                                                lines.push( '      <path d="' + pathData + '" />' );
+                                                lines.push( '    </clipPath>' );
+                                                lines.push( '  </defs>' );
+                                                lines.push(
+                                                        '  <image clip-path="url(#patternClip)" preserveAspectRatio="none" href="' + paintHref + '" xlink:href="' + paintHref + '" x="' +
+                                                        ( minX * svgScale ).toFixed( 5 ) + '" y="' + ( - maxZ * svgScale ).toFixed( 5 ) + '" width="' +
+                                                        ( ( maxX - minX ) * svgScale ).toFixed( 5 ) + '" height="' +
+                                                        ( ( maxZ - minZ ) * svgScale ).toFixed( 5 ) + '" />'
+                                                );
+
+                                        }
+
+                                        lines.push(
+                                                '  <path d="' + pathData + '" fill="none" stroke="#000000" stroke-width="' + strokeWidth + '" />'
+                                        );
+                                        lines.push( '</svg>' );
+                                        return lines.join( '\n' );
+
+                                }
+
+                                function paintMapHasContent() {
+
+                                        const data = paintCtx.getImageData( 0, 0, PAINT_MAP_SIZE, PAINT_MAP_SIZE ).data;
+                                        for ( let i = 3; i < data.length; i += 4 ) {
+
+                                                if ( data[ i ] > 0 ) return true;
+
+                                        }
+
+                                        return false;
+
+                                }
+
+                                function rasterizeFlatGeometryPaintDataURL( geometry, minX, maxX, minZ, maxZ ) {
+
+                                        const uvs = geometry.getAttribute( 'uv' );
+                                        const positions = geometry.getAttribute( 'position' );
+                                        if ( ! uvs || ! positions ) return null;
+                                        if ( ! paintMapHasContent() ) return null;
+
+                                        const spanX = Math.max( 1e-8, maxX - minX );
+                                        const spanZ = Math.max( 1e-8, maxZ - minZ );
+                                        const maxDim = 2048;
+                                        let width;
+                                        let height;
+                                        if ( spanX >= spanZ ) {
+
+                                                width = maxDim;
+                                                height = Math.max( 1, Math.round( maxDim * spanZ / spanX ) );
+
+                                        } else {
+
+                                                height = maxDim;
+                                                width = Math.max( 1, Math.round( maxDim * spanX / spanZ ) );
+
+                                        }
+
+                                        const outCanvas = document.createElement( 'canvas' );
+                                        outCanvas.width = width;
+                                        outCanvas.height = height;
+                                        const outCtx = outCanvas.getContext( '2d' );
+                                        const out = outCtx.createImageData( width, height );
+                                        const outData = out.data;
+
+                                        const paintData = paintCtx.getImageData( 0, 0, PAINT_MAP_SIZE, PAINT_MAP_SIZE ).data;
+                                        const opacityData = paintOpacityCtx.getImageData( 0, 0, PAINT_MAP_SIZE, PAINT_MAP_SIZE ).data;
+
+                                        function samplePaint( u, v ) {
+
+                                                u = ( ( u % 1 ) + 1 ) % 1;
+                                                v = Math.min( 1, Math.max( 0, v ) );
+                                                let px = Math.floor( u * PAINT_MAP_SIZE );
+                                                let py = Math.floor( ( 1 - v ) * PAINT_MAP_SIZE );
+                                                if ( px < 0 ) px = 0;
+                                                if ( px >= PAINT_MAP_SIZE ) px = PAINT_MAP_SIZE - 1;
+                                                if ( py < 0 ) py = 0;
+                                                if ( py >= PAINT_MAP_SIZE ) py = PAINT_MAP_SIZE - 1;
+                                                const i = ( py * PAINT_MAP_SIZE + px ) * 4;
+                                                return {
+                                                        r: paintData[ i ],
+                                                        g: paintData[ i + 1 ],
+                                                        b: paintData[ i + 2 ],
+                                                        a: paintData[ i + 3 ],
+                                                        opacity: opacityData[ i ] / 255
+                                                };
+
+                                        }
+
+                                        function writePixel( ix, iy, r, g, b, a ) {
+
+                                                if ( a <= 0 ) return;
+                                                if ( ix < 0 || iy < 0 || ix >= width || iy >= height ) return;
+                                                const o = ( iy * width + ix ) * 4;
+                                                const dstA = outData[ o + 3 ] / 255;
+                                                const srcA = a / 255;
+                                                const outA = srcA + dstA * ( 1 - srcA );
+                                                if ( outA <= 1e-6 ) return;
+                                                outData[ o ] = Math.round( ( r * srcA + outData[ o ] * dstA * ( 1 - srcA ) ) / outA );
+                                                outData[ o + 1 ] = Math.round( ( g * srcA + outData[ o + 1 ] * dstA * ( 1 - srcA ) ) / outA );
+                                                outData[ o + 2 ] = Math.round( ( b * srcA + outData[ o + 2 ] * dstA * ( 1 - srcA ) ) / outA );
+                                                outData[ o + 3 ] = Math.round( outA * 255 );
+
+                                        }
+
+                                        const index = geometry.index;
+                                        const triangleCount = index ? index.count / 3 : positions.count / 3;
+
+                                        for ( let t = 0; t < triangleCount; t ++ ) {
+
+                                                const i0 = index ? index.getX( t * 3 ) : t * 3;
+                                                const i1 = index ? index.getX( t * 3 + 1 ) : t * 3 + 1;
+                                                const i2 = index ? index.getX( t * 3 + 2 ) : t * 3 + 2;
+
+                                                const ax = positions.getX( i0 );
+                                                const az = positions.getZ( i0 );
+                                                const bx = positions.getX( i1 );
+                                                const bz = positions.getZ( i1 );
+                                                const cx = positions.getX( i2 );
+                                                const cz = positions.getZ( i2 );
+
+                                                const au = uvs.getX( i0 );
+                                                const av = uvs.getY( i0 );
+                                                const bu = uvs.getX( i1 );
+                                                const bv = uvs.getY( i1 );
+                                                const cu = uvs.getX( i2 );
+                                                const cv = uvs.getY( i2 );
+
+                                                const denom = ( bz - cz ) * ( ax - cx ) + ( cx - bx ) * ( az - cz );
+                                                if ( Math.abs( denom ) < 1e-20 ) continue;
+
+                                                const ix0 = Math.floor( ( Math.min( ax, bx, cx ) - minX ) / spanX * width );
+                                                const ix1 = Math.ceil( ( Math.max( ax, bx, cx ) - minX ) / spanX * width );
+                                                // Image y=0 at maxZ (matches SVG y = -z).
+                                                const iy0 = Math.floor( ( maxZ - Math.max( az, bz, cz ) ) / spanZ * height );
+                                                const iy1 = Math.ceil( ( maxZ - Math.min( az, bz, cz ) ) / spanZ * height );
+
+                                                const xStart = Math.max( 0, ix0 );
+                                                const xEnd = Math.min( width - 1, ix1 );
+                                                const yStart = Math.max( 0, iy0 );
+                                                const yEnd = Math.min( height - 1, iy1 );
+
+                                                for ( let iy = yStart; iy <= yEnd; iy ++ ) {
+
+                                                        const z = maxZ - ( iy + 0.5 ) / height * spanZ;
+
+                                                        for ( let ix = xStart; ix <= xEnd; ix ++ ) {
+
+                                                                const x = minX + ( ix + 0.5 ) / width * spanX;
+                                                                const w0 = ( ( bz - cz ) * ( x - cx ) + ( cx - bx ) * ( z - cz ) ) / denom;
+                                                                const w1 = ( ( cz - az ) * ( x - cx ) + ( ax - cx ) * ( z - cz ) ) / denom;
+                                                                const w2 = 1 - w0 - w1;
+                                                                if ( w0 < - 1e-5 || w1 < - 1e-5 || w2 < - 1e-5 ) continue;
+
+                                                                const u = w0 * au + w1 * bu + w2 * cu;
+                                                                const v = w0 * av + w1 * bv + w2 * cv;
+                                                                const sample = samplePaint( u, v );
+                                                                if ( sample.a <= 0 ) continue;
+                                                                writePixel(
+                                                                        ix,
+                                                                        iy,
+                                                                        sample.r,
+                                                                        sample.g,
+                                                                        sample.b,
+                                                                        Math.round( sample.a * sample.opacity )
+                                                                );
+
+                                                        }
+
+                                                }
+
+                                        }
+
+                                        outCtx.putImageData( out, 0, 0 );
+                                        return outCanvas.toDataURL( 'image/png' );
 
                                 }
 
