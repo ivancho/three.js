@@ -205,6 +205,23 @@
                                 border-radius: 2px;
                         }
 
+                        /* Unset plain/glass color: checkerboard "empty" swatch (native color inputs are opaque). */
+                        .param-control.wall-color-unset {
+                                position: relative;
+                                box-sizing: border-box;
+                                min-width: 2.25em;
+                                min-height: 1.35em;
+                                border: 1px dashed #888;
+                                border-radius: 3px;
+                                background: repeating-conic-gradient( #c8c8c8 0% 25%, #f3f3f3 0% 50% ) 50% / 8px 8px;
+                                overflow: hidden;
+                        }
+
+                        .param-control.wall-color-unset input[type="color"] {
+                                opacity: 0;
+                                cursor: pointer;
+                        }
+
                         .list-item > div:nth-child(1).paint-cursor {
                                 cursor: none;
                         }
@@ -446,21 +463,21 @@
                                 <span class="info-help" tabindex="0" aria-label="Controls and save tips">?
                                         <span class="info-help-tooltip" role="tooltip">
                                                 <p>Drag to rotate the camera · right-click drag to pan · scroll to zoom.</p>
-                                                <p>The sliced cone and unrolled pattern share one view. Use Move / Rotate below the view to edit the cone (clipping planes follow).
-                                                        T toggles Move, R toggles Rotate. Click the same icon again or Esc to exit. The Level button levels the cut planes.
+                                                <p>Use Move / Rotate below the view to edit the cone (clipping planes follow).
+                                                        M toggles Move, R toggles Rotate. Click the same icon again or Esc to exit. L (or the Level button) places the cone on the ground using the opening that is closer to it.
                                                 </p>
                                                 <p>Paint (B) lets you brush colors onto the flattened pattern; the same UV paint map shows on the cone.
-                                                        Pick a color next to the brush; set opacity, size, and softness in the Paint folder (lower opacity makes the wall see-through), hold Shift to erase. Esc exits Paint.
+                                                        Pick a color next to the brush; set opacity, size, and softness in the Paint section (lower opacity makes the cone wall see-through), hold Shift to erase. Esc exits Paint.
                                                         Each stroke is saved (brush settings included) and can be undone with ⌘Z / Ctrl+Z one stroke at a time; strokes persist with autosave / named saves via IndexedDB.
                                                 </p>
-                                                <p>Autosave writes pending edits to local storage immediately (mesh buffers go to IndexedDB; 
-                                                        snapshots keep only mesh keys) and promotes up to 20 versions about once a minute. 
-                                                        ⌘Z / Ctrl+Z steps back through pending snapshots (then the latest autosave); 
+                                                <p>Autosave writes pending edits to local storage immediately (brush strokes go to IndexedDB)
+                                                        and promotes up to 20 versions about once a minute. 
+                                                        ⌘Z / Ctrl+Z steps back through pending snapshots (up to the latest autosave); 
                                                         ⌘⇧Z / Ctrl+Shift+Z steps forward. 
-                                                        Peeled redo tails are kept in IndexedDB so undoing a branch-point edit can restore them. 
+                                                        Peeled redo tails (after a load and new edit) are kept in IndexedDB so undoing a branch-point edit can restore them. 
                                                         Save with a name to store a separate named history. 
                                                         Select a name and version to restore.</p>
-                                                <p>Download SVG of the unrolled pattern to print (includes cone params, paint raster, and brush strokes). Upload SVG restores cone params when present, then brush strokes onto the pattern.</p>
+                                                <p>Download SVG of the unrolled pattern to print (includes cone params, paint raster, and brush strokes). Upload SVG restores cone params when present, then brush strokes onto the pattern, if present.</p>
                                         </span>
                                 </span>
                         </div>
@@ -614,17 +631,21 @@ import * as THREE from 'three/webgpu';
 
                         }
 
-                        function createGlassMaterial() {
+                        function createGlassMaterial( baseColorHex ) {
 
                                 const causticMap = new THREE.TextureLoader().load( './textures/opengameart/Caustic_Free.jpg' );
                                 causticMap.wrapS = causticMap.wrapT = THREE.RepeatWrapping;
                                 causticMap.colorSpace = THREE.SRGBColorSpace;
 
+                                const baseCol = baseColorHex
+                                        ? new THREE.Color( baseColorHex )
+                                        : new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
+
                                 const material = new THREE.MeshPhysicalNodeMaterial();
                                 material.side = THREE.DoubleSide;
                                 material.transparent = true;
                                 material.opacity = 1;
-                                material.color = new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
+                                material.color = baseCol;
                                 // Single full-view render — transmission samples this framebuffer correctly.
                                 material.transmission = 1;
                                 material.thickness = 0.25;
@@ -636,6 +657,8 @@ import * as THREE from 'three/webgpu';
 
                                 const causticOcclusion = uniform( 20 );
                                 const causticColor = uniform( material.color );
+                                material.userData.causticColor = causticColor;
+                                material.userData.baseColorHex = '#' + baseCol.getHexString();
 
                                 material.castShadowPositionNode = Fn( () => {
 
@@ -664,9 +687,11 @@ import * as THREE from 'three/webgpu';
 
                         }
 
-                        function createPlainMaterial() {
+                        function createPlainMaterial( baseColorHex ) {
 
-                                const baseCol = new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
+                                const baseCol = baseColorHex
+                                        ? new THREE.Color( baseColorHex )
+                                        : new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
                                 const material = new THREE.MeshPhysicalNodeMaterial( {
 
                                         color: baseCol,
@@ -679,6 +704,7 @@ import * as THREE from 'three/webgpu';
                                         ior: 1.5
 
                                 } );
+                                material.userData.baseColorHex = '#' + baseCol.getHexString();
                                 applyPaintOverlay( material, color( baseCol ) );
                                 return material;
 
@@ -709,6 +735,9 @@ import * as THREE from 'three/webgpu';
                                 let coneUsesParametricGeometry = true;
                                 let wallMaterial = 'clay';
                                 const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
+                                // null = unset → plain/glass stay on their load-time random color until the user picks one.
+                                let wallBaseColor = null;
+                                let ignoreWallColorPersist = false;
                                 let wallThickness = 0.25;
                                 let wallTransmission = 1;
                                 let lastInverseDiagnostics = null;
@@ -961,7 +990,7 @@ import * as THREE from 'three/webgpu';
                                 moveToolButton = document.createElement( 'button' );
                                 moveToolButton.type = 'button';
                                 moveToolButton.className = 'tool-button';
-                                moveToolButton.title = 'Move (T)';
+                                moveToolButton.title = 'Move (M)';
                                 moveToolButton.setAttribute( 'aria-label', 'Move' );
                                 moveToolButton.setAttribute( 'aria-pressed', 'false' );
                                 moveToolButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>';
@@ -987,8 +1016,8 @@ import * as THREE from 'three/webgpu';
                                 const levelToolButton = document.createElement( 'button' );
                                 levelToolButton.type = 'button';
                                 levelToolButton.className = 'tool-button';
-                                levelToolButton.title = 'Level cuts to ground';
-                                levelToolButton.setAttribute( 'aria-label', 'Level cuts to ground' );
+                                levelToolButton.title = 'Level to ground using the nearer opening (L)';
+                                levelToolButton.setAttribute( 'aria-label', 'Level to ground using the nearer opening' );
                                 levelToolButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="M12 3v14M7 13l5 5 5-5"/></svg>';
                                 levelToolButton.addEventListener( 'click', function () {
 
@@ -2302,6 +2331,7 @@ import * as THREE from 'three/webgpu';
                                                 a.patternFirst === b.patternFirst &&
                                                 a.coneUsesParametricGeometry === b.coneUsesParametricGeometry &&
                                                 a.wallMaterial === b.wallMaterial &&
+                                                a.wallBaseColor === b.wallBaseColor &&
                                                 a.thickness === b.thickness &&
                                                 a.transmission === b.transmission &&
                                                 a.coneAngle === b.coneAngle &&
@@ -2682,6 +2712,7 @@ import * as THREE from 'three/webgpu';
                                                 patternFirst: isConicV2Enabled() ? patternFirst : false,
                                                 coneUsesParametricGeometry: isConicV2Enabled() ? coneUsesParametricGeometry : true,
                                                 wallMaterial: wallMaterial,
+                                                wallBaseColor: wallBaseColor,
                                                 thickness: wallThickness,
                                                 transmission: wallTransmission,
                                                 coneAngle: coneAngle,
@@ -3181,7 +3212,39 @@ import * as THREE from 'three/webgpu';
                                                 const next = v === 'duck' ? 'glass' : v;
                                                 wallMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
                                                 updateConeWallMaterial();
+                                                updateWallColorEditorsVisibility();
                                                 scheduleAutosave();
+
+                                        },
+
+                                        get wallColor() {
+
+                                                if ( wallBaseColor ) return wallBaseColor;
+                                                const sample = wallMaterials.plain || wallMaterials.glass;
+                                                return ( sample && sample.userData.baseColorHex ) || '#c080ff';
+
+                                        },
+
+                                        set wallColor( v ) {
+
+                                                const hex = paintColorToCssHex( v );
+                                                if ( ! ignoreWallColorPersist ) wallBaseColor = hex;
+                                                applyWallBaseColorHex( hex );
+                                                syncWallColorUnsetIndicator();
+                                                if ( ! isRestoring && ! ignoreWallColorPersist ) scheduleAutosave();
+
+                                        },
+
+                                        RandomizeWallColor() {
+
+                                                wallBaseColor = null;
+                                                const hex = '#' + new THREE.Color().setHSL( Math.random(), 0.75, 0.55 ).getHexString();
+                                                ignoreWallColorPersist = true;
+                                                if ( conicEditors.wallColor ) conicEditors.wallColor.setValue( hex );
+                                                else applyWallBaseColorHex( hex );
+                                                ignoreWallColorPersist = false;
+                                                syncWallColorUnsetIndicator();
+                                                if ( ! isRestoring ) scheduleAutosave();
 
                                         },
 
@@ -3436,8 +3499,12 @@ import * as THREE from 'three/webgpu';
                                 conicEditors.autoZoom = folderScene.add( propsConic, 'autoZoom' );
 
                                 conicEditors.wallMaterial = folderMaterial.add( propsConic, 'wallMaterial', WALL_MATERIALS );
+                                conicEditors.wallColor = folderMaterial.addColor( propsConic, 'wallColor' ).name( 'color (auto)' );
+                                conicEditors.randomizeWallColor = folderMaterial.add( propsConic, 'RandomizeWallColor' ).name( 'randomize color' );
                                 conicEditors.thickness = folderMaterial.add( propsConic, 'thickness', 0, 5, 0.01 );
                                 conicEditors.transmission = folderMaterial.add( propsConic, 'transmission', 0, 1, 0.01 );
+                                updateWallColorEditorsVisibility();
+                                syncWallColorUnsetIndicator();
 
                                 function syncClippingPlanesToWorld() {
 
@@ -4405,7 +4472,7 @@ import * as THREE from 'three/webgpu';
                                         if ( ! event.metaKey && ! event.ctrlKey && ! event.altKey ) {
 
                                                 const toolKey = event.key.toLowerCase();
-                                                if ( toolKey === 't' ) {
+                                                if ( toolKey === 'm' ) {
 
                                                         setTransformMode( transformMode === 'translate' ? null : 'translate' );
                                                         return;
@@ -4415,6 +4482,13 @@ import * as THREE from 'three/webgpu';
                                                 if ( toolKey === 'r' ) {
 
                                                         setTransformMode( transformMode === 'rotate' ? null : 'rotate' );
+                                                        return;
+
+                                                }
+
+                                                if ( toolKey === 'l' ) {
+
+                                                        levelCutPlanesToGround();
                                                         return;
 
                                                 }
@@ -4479,6 +4553,72 @@ import * as THREE from 'three/webgpu';
 
                                         } );
                                         requestRender();
+
+                                }
+
+                                function applyWallBaseColorHex( hex ) {
+
+                                        const baseCol = new THREE.Color( hex );
+                                        const cssHex = '#' + baseCol.getHexString();
+
+                                        if ( wallMaterials.plain ) {
+
+                                                wallMaterials.plain.color.copy( baseCol );
+                                                wallMaterials.plain.userData.baseColorHex = cssHex;
+                                                applyPaintOverlay( wallMaterials.plain, color( baseCol ) );
+
+                                        }
+
+                                        if ( wallMaterials.glass ) {
+
+                                                wallMaterials.glass.color.copy( baseCol );
+                                                wallMaterials.glass.userData.baseColorHex = cssHex;
+                                                applyPaintOverlay( wallMaterials.glass, color( baseCol ) );
+                                                if ( wallMaterials.glass.userData.causticColor ) {
+
+                                                        wallMaterials.glass.userData.causticColor.value.copy( baseCol );
+
+                                                }
+
+                                        }
+
+                                        requestRender();
+
+                                }
+
+                                function updateWallColorEditorsVisibility() {
+
+                                        const show = wallMaterial === 'plain' || wallMaterial === 'glass';
+                                        if ( conicEditors.wallColor ) {
+
+                                                if ( show ) conicEditors.wallColor.show();
+                                                else conicEditors.wallColor.hide();
+
+                                        }
+
+                                        if ( conicEditors.randomizeWallColor ) {
+
+                                                if ( show ) conicEditors.randomizeWallColor.show();
+                                                else conicEditors.randomizeWallColor.hide();
+
+                                        }
+
+                                        syncWallColorUnsetIndicator();
+
+                                }
+
+                                function syncWallColorUnsetIndicator() {
+
+                                        const editor = conicEditors.wallColor;
+                                        if ( ! editor || ! editor.domElement ) return;
+
+                                        const unset = wallBaseColor == null;
+                                        editor.domElement.classList.toggle( 'wall-color-unset', unset );
+                                        if ( typeof editor.name === 'function' ) {
+
+                                                editor.name( unset ? 'color (auto)' : 'color (plain/glass)' );
+
+                                        }
 
                                 }
 
@@ -4800,6 +4940,18 @@ import * as THREE from 'three/webgpu';
                                         if ( conicEditors.showGroundPlane ) conicEditors.showGroundPlane.setValue( params.showGroundPlane );
                                         if ( conicEditors.autoZoom ) conicEditors.autoZoom.setValue( params.autoZoom );
                                         if ( conicEditors.wallMaterial ) conicEditors.wallMaterial.setValue( params.wallMaterial );
+                                        if ( conicEditors.wallColor ) {
+
+                                                ignoreWallColorPersist = true;
+                                                conicEditors.wallColor.setValue(
+                                                        params.wallBaseColor
+                                                                ? paintColorToCssHex( params.wallBaseColor )
+                                                                : ( ( wallMaterials.plain && wallMaterials.plain.userData.baseColorHex ) || '#c080ff' )
+                                                );
+                                                ignoreWallColorPersist = false;
+
+                                        }
+                                        updateWallColorEditorsVisibility();
                                         if ( conicEditors.thickness && params.thickness != null ) conicEditors.thickness.setValue( params.thickness );
                                         if ( conicEditors.transmission && params.transmission != null ) conicEditors.transmission.setValue( params.transmission );
                                         if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( params.coneAngle );
@@ -4875,6 +5027,20 @@ import * as THREE from 'three/webgpu';
                                                         updateConeWallMaterial();
 
                                                 }
+
+                                                if ( 'wallBaseColor' in params ) {
+
+                                                        wallBaseColor = params.wallBaseColor ? paintColorToCssHex( params.wallBaseColor ) : null;
+                                                        if ( wallBaseColor ) {
+
+                                                                applyWallBaseColorHex( wallBaseColor );
+
+                                                        }
+
+                                                }
+
+                                                updateWallColorEditorsVisibility();
+                                                syncWallColorUnsetIndicator();
 
                                                 if ( 'thickness' in params ) {
 
@@ -5121,11 +5287,14 @@ import * as THREE from 'three/webgpu';
                                                         syncCutPlaneConstants();
                                                         updatePlaneNormals();
                                                         wallMaterial = 'clay';
+                                                        wallBaseColor = null;
                                                         wallThickness = 0.25;
                                                         wallTransmission = 1;
                                                         applyWallThickness();
                                                         applyWallTransmission();
+                                                        propsConic.RandomizeWallColor();
                                                         updateConeWallMaterial();
+                                                        updateWallColorEditorsVisibility();
 
                                                         knotClippingGroups.forEach( function ( group ) {
 
@@ -6414,6 +6583,23 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function svgHasBrushStrokePaths( svgDoc ) {
+
+                                        const group = svgDoc.getElementById( 'brush-stroke-paths' );
+                                        if ( ! group ) return false;
+
+                                        const pathEls = group.querySelectorAll( 'path' );
+                                        for ( let i = 0; i < pathEls.length; i ++ ) {
+
+                                                const flatPoints = parseSvgPathPolylines( pathEls[ i ].getAttribute( 'd' ) );
+                                                if ( flatPoints.length >= 4 ) return true;
+
+                                        }
+
+                                        return false;
+
+                                }
+
                                 async function applyPaintStrokesFromSvgDocument( doc ) {
 
                                         const previousParams = getParams();
@@ -6427,6 +6613,51 @@ import * as THREE from 'three/webgpu';
 
                                                 // Present but unusable — fail the whole import with no scene changes.
                                                 throw err;
+
+                                        }
+
+                                        const hasBrushStrokePaths = svgHasBrushStrokePaths( doc );
+
+                                        // Cone-only SVG: apply params quietly and skip the brush-stroke requirement/dialog.
+                                        if ( coneParams && ! hasBrushStrokePaths ) {
+
+                                                let startedMutation = false;
+
+                                                try {
+
+                                                        startedMutation = true;
+                                                        // Preserve current paint; cone-params payloads clear paintStrokeIds intentionally for stroke imports.
+                                                        await applyParams( Object.assign( {}, coneParams, {
+                                                                paintStrokeIds: previousParams.paintStrokeIds || [],
+                                                                paintColor: previousParams.paintColor,
+                                                                paintOpacity: previousParams.paintOpacity,
+                                                                paintBrushSize: previousParams.paintBrushSize,
+                                                                paintBrushSoftness: previousParams.paintBrushSoftness
+                                                        } ) );
+                                                        scheduleAutosave();
+                                                        requestRender();
+
+                                                } catch ( err ) {
+
+                                                        if ( startedMutation ) {
+
+                                                                try {
+
+                                                                        await applyParams( previousParams );
+
+                                                                } catch ( restoreErr ) {
+
+                                                                        console.warn( 'Failed to restore previous params after SVG import error', restoreErr );
+
+                                                                }
+
+                                                        }
+
+                                                        throw err;
+
+                                                }
+
+                                                return;
 
                                         }
 
