@@ -451,9 +451,63 @@
                                 opacity: 1;
                         }
 
+                        #params-loading {
+                                position: fixed;
+                                inset: 0;
+                                z-index: 10000000;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                background: rgba( 238, 238, 238, 0.72 );
+                                backdrop-filter: blur( 2px );
+                                transition: opacity 0.2s ease;
+                        }
+
+                        #params-loading[hidden] {
+                                display: none;
+                        }
+
+                        #params-loading.is-hiding {
+                                opacity: 0;
+                                pointer-events: none;
+                        }
+
+                        .params-loading-card {
+                                padding: 0.9em 1.25em;
+                                border: 1px solid #bbb;
+                                border-radius: 4px;
+                                background: #fff;
+                                box-shadow: 0 8px 24px rgba( 0, 0, 0, 0.12 );
+                                color: #444;
+                                font-family: sans-serif;
+                                font-size: 0.95em;
+                                letter-spacing: 0.01em;
+                        }
+
+                        .params-loading-card::before {
+                                content: '';
+                                display: inline-block;
+                                width: 0.85em;
+                                height: 0.85em;
+                                margin-right: 0.55em;
+                                border: 2px solid #ccc;
+                                border-top-color: #444;
+                                border-radius: 50%;
+                                vertical-align: -0.1em;
+                                animation: params-loading-spin 0.7s linear infinite;
+                        }
+
+                        @keyframes params-loading-spin {
+                                to { transform: rotate( 360deg ); }
+                        }
+
                 </style>
         </head>
         <body>
+
+                <div id="params-loading" aria-live="polite" aria-busy="true">
+                        <div class="params-loading-card">Loading saved scene…</div>
+                </div>
 
                 <canvas id="c"></canvas>
 
@@ -501,7 +555,7 @@ import * as THREE from 'three/webgpu';
                                 import {
                                         color, div, float, Fn, mix, mx_fractal_noise_float, mx_noise_float, mx_worley_noise_float,
                                         normalView, positionLocal, positionView, positionViewDirection, refract,
-                                        smoothstep, texture, uniform, uv, vec2, vec3
+                                        smoothstep, texture, uniform, uv, vec2, vec3, vec4
                                 } from 'three/tsl';
                                 import { Inspector } from 'three/addons/inspector/Inspector.js';
                                 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -548,12 +602,17 @@ import * as THREE from 'three/webgpu';
 
                         // Shared UV paint overlay — same maps drive both the flat pattern and the cone.
                         // Color map alpha = coverage; opacity map stores material opacity (default 1).
+                        // Base color must be a UniformNode (or other live node), not color()/ConstNode —
+                        // ConstNodes bake RGB into the shader and won't update when material.color changes
+                        // unless material.needsUpdate is flipped (rebuild).
                         function applyPaintOverlay( material, baseColorNode ) {
 
                                 const paintSample = texture( paintTexture, uv() );
                                 const opacitySample = texture( paintOpacityTexture, uv() );
 
-                                material.colorNode = mix( baseColorNode, paintSample.rgb, paintSample.a );
+                                // Explicit a=1 so paint colorNode does not zero transmitted-shadow alpha
+                                // (Renderer multiplies castShadowNode.a by colorNode.a).
+                                material.colorNode = vec4( mix( baseColorNode, paintSample.rgb, paintSample.a ), 1 );
                                 material.opacityNode = opacitySample.r;
                                 material.transparent = true;
 
@@ -562,6 +621,14 @@ import * as THREE from 'three/webgpu';
                         init().catch( function ( error ) {
 
                                 console.error( error );
+                                const loading = document.getElementById( 'params-loading' );
+                                if ( loading ) {
+
+                                        loading.hidden = true;
+                                        loading.classList.remove( 'is-hiding' );
+                                        loading.setAttribute( 'aria-busy', 'false' );
+
+                                }
 
                         } );
 
@@ -646,6 +713,10 @@ import * as THREE from 'three/webgpu';
                                 material.transparent = true;
                                 material.opacity = 1;
                                 material.color = baseCol;
+                                // Avoid dual-pass transparent shadows: with ClipShadows they corrupt
+                                // transmitted caustic color writes into a solid black umbra.
+                                material.forceSinglePass = true;
+                                material.shadowSide = THREE.FrontSide;
                                 // Single full-view render — transmission samples this framebuffer correctly.
                                 material.transmission = 1;
                                 material.thickness = 0.25;
@@ -653,12 +724,15 @@ import * as THREE from 'three/webgpu';
                                 material.metalness = 0;
                                 material.roughness = 0.08;
                                 material.specularIntensity = 1;
-                                applyPaintOverlay( material, color( material.color ) );
+
+                                // Live uniform sharing material.color — randomize/copy updates mesh + caustic together.
+                                const baseColorUniform = uniform( material.color );
+                                material.userData.baseColorUniform = baseColorUniform;
+                                material.userData.causticColor = baseColorUniform;
+                                material.userData.baseColorHex = '#' + baseCol.getHexString();
+                                applyPaintOverlay( material, baseColorUniform );
 
                                 const causticOcclusion = uniform( 20 );
-                                const causticColor = uniform( material.color );
-                                material.userData.causticColor = causticColor;
-                                material.userData.baseColorHex = '#' + baseCol.getHexString();
 
                                 material.castShadowPositionNode = Fn( () => {
 
@@ -679,7 +753,8 @@ import * as THREE from 'three/webgpu';
                                                 texture( causticMap, textureUV.add( vec2( chromaticAberrationOffset, chromaticAberrationOffset ) ) ).b
                                         );
 
-                                        return causticProjection.mul( viewZ.mul( 25 ) ).add( viewZ ).mul( causticColor );
+                                        const causticRgb = causticProjection.mul( viewZ.mul( 25 ) ).add( viewZ ).mul( baseColorUniform );
+                                        return vec4( causticRgb, 1 );
 
                                 } )();
 
@@ -705,7 +780,9 @@ import * as THREE from 'three/webgpu';
 
                                 } );
                                 material.userData.baseColorHex = '#' + baseCol.getHexString();
-                                applyPaintOverlay( material, color( baseCol ) );
+                                const baseColorUniform = uniform( material.color );
+                                material.userData.baseColorUniform = baseColorUniform;
+                                applyPaintOverlay( material, baseColorUniform );
                                 return material;
 
                         }
@@ -713,6 +790,58 @@ import * as THREE from 'three/webgpu';
                         async function init() {
 
                                 canvas = document.getElementById( 'c' );
+                                const paramsLoadingEl = document.getElementById( 'params-loading' );
+                                const paramsLoadingLabel = paramsLoadingEl && paramsLoadingEl.querySelector( '.params-loading-card' );
+                                let paramsLoadingDepth = 0;
+                                let bootParamsLoading = true;
+
+                                function beginParamsLoading( message ) {
+
+                                        paramsLoadingDepth ++;
+                                        if ( paramsLoadingLabel && message ) paramsLoadingLabel.textContent = message;
+                                        if ( ! paramsLoadingEl ) return;
+                                        paramsLoadingEl.hidden = false;
+                                        paramsLoadingEl.classList.remove( 'is-hiding' );
+                                        paramsLoadingEl.setAttribute( 'aria-busy', 'true' );
+
+                                }
+
+                                function endParamsLoading() {
+
+                                        paramsLoadingDepth = Math.max( 0, paramsLoadingDepth - 1 );
+                                        if ( paramsLoadingDepth > 0 || bootParamsLoading || ! paramsLoadingEl ) return;
+
+                                        paramsLoadingEl.setAttribute( 'aria-busy', 'false' );
+                                        paramsLoadingEl.classList.add( 'is-hiding' );
+                                        window.setTimeout( function () {
+
+                                                if ( paramsLoadingDepth === 0 && ! bootParamsLoading ) {
+
+                                                        paramsLoadingEl.hidden = true;
+                                                        paramsLoadingEl.classList.remove( 'is-hiding' );
+
+                                                }
+
+                                        }, 200 );
+
+                                }
+
+                                function waitForParamsLoadingPaint() {
+
+                                        // Double rAF so the overlay is painted before heavy restore work.
+                                        return new Promise( function ( resolve ) {
+
+                                                requestAnimationFrame( function () {
+
+                                                        requestAnimationFrame( resolve );
+
+                                                } );
+
+                                        } );
+
+                                }
+
+                                beginParamsLoading( 'Loading saved scene…' );
 
                                 const BASE_CONE_HEIGHT = 5;
                                 let coneAngle = 0.4;
@@ -4565,7 +4694,6 @@ import * as THREE from 'three/webgpu';
 
                                                 wallMaterials.plain.color.copy( baseCol );
                                                 wallMaterials.plain.userData.baseColorHex = cssHex;
-                                                applyPaintOverlay( wallMaterials.plain, color( baseCol ) );
 
                                         }
 
@@ -4573,15 +4701,10 @@ import * as THREE from 'three/webgpu';
 
                                                 wallMaterials.glass.color.copy( baseCol );
                                                 wallMaterials.glass.userData.baseColorHex = cssHex;
-                                                applyPaintOverlay( wallMaterials.glass, color( baseCol ) );
-                                                if ( wallMaterials.glass.userData.causticColor ) {
-
-                                                        wallMaterials.glass.userData.causticColor.value.copy( baseCol );
-
-                                                }
 
                                         }
 
+                                        // colorNode / caustic already sample uniform(material.color) — no rebuild needed.
                                         requestRender();
 
                                 }
@@ -4963,10 +5086,12 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
-                                async function applyParams( params ) {
+                                async function applyParams( params, options = {} ) {
 
                                         if ( ! params ) return;
 
+                                        beginParamsLoading( options.loadingMessage || 'Loading scene…' );
+                                        await waitForParamsLoadingPaint();
                                         isRestoring = true;
 
                                         try {
@@ -5186,6 +5311,7 @@ import * as THREE from 'three/webgpu';
                                         } finally {
 
                                                 isRestoring = false;
+                                                endParamsLoading();
 
                                         }
 
@@ -5222,6 +5348,9 @@ import * as THREE from 'three/webgpu';
                                 store.pending.length = 0;
                                 await saveStore();
 
+                                bootParamsLoading = false;
+                                endParamsLoading();
+
                                 const folderPersist = gui.addFolder( 'Persistence' );
                                 const propsPersist = {
                                         name: '',
@@ -5252,7 +5381,10 @@ import * as THREE from 'three/webgpu';
                                                 if ( ! Number.isFinite( index ) || index < 0 || ! versions[ index ] ) return;
                                                 if ( ! isConicV2Enabled() && isBufferGeometrySnapshot( versions[ index ].params ) ) return;
 
-                                                await applyParams( versions[ index ].params );
+                                                const loadingMessage = loadName === AUTOSAVE_LABEL
+                                                        ? 'Loading autosave…'
+                                                        : ( 'Loading save "' + loadName + '"…' );
+                                                await applyParams( versions[ index ].params, { loadingMessage: loadingMessage } );
 
                                                 if ( loadName === AUTOSAVE_LABEL ) {
 
@@ -5267,6 +5399,8 @@ import * as THREE from 'three/webgpu';
                                         },
                                         async Reset() {
 
+                                                beginParamsLoading( 'Resetting scene…' );
+                                                await waitForParamsLoadingPaint();
                                                 isRestoring = true;
 
                                                 try {
@@ -5318,6 +5452,7 @@ import * as THREE from 'three/webgpu';
                                                 } finally {
 
                                                         isRestoring = false;
+                                                        endParamsLoading();
 
                                                 }
 
