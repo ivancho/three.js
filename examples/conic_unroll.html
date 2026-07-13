@@ -6,8 +6,8 @@
                 <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
                 <meta property="og:title" content="three.js conic unroll">
                 <meta property="og:type" content="website">
-                <meta property="og:url" content="https://threejs.org/examples/conic_unroll.html">
-                <meta property="og:image" content="https://threejs.org/examples/screenshots/webgpu_multiple_elements.jpg">
+                <meta property="og:url" content="https://one.elaborate.page/conics/conic_unroll.html">
+                <meta property="og:image" content="https://one.elaborate.page/conics/screenshots/RollACone.png">
                 <link type="text/css" rel="stylesheet" href="main.css">
                 <style>
 
@@ -119,6 +119,7 @@
                         }
 
                         .download-svg,
+                        .upload-svg,
                         .tool-button {
                                 flex-shrink: 0;
                                 margin: 0;
@@ -134,6 +135,7 @@
                         }
 
                         .download-svg:hover,
+                        .upload-svg:hover,
                         .tool-button:hover {
                                 background: #eee;
                         }
@@ -205,6 +207,131 @@
 
                         .list-item > div:nth-child(1).paint-cursor {
                                 cursor: none;
+                        }
+
+                        .upload-svg-dialog-backdrop {
+                                position: fixed;
+                                inset: 0;
+                                z-index: 10001;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                padding: 1.5em;
+                                background: rgba( 0, 0, 0, 0.35 );
+                        }
+
+                        .upload-svg-dialog {
+                                width: min( 28em, 100% );
+                                padding: 1.1em 1.2em 1em;
+                                border: 1px solid #bbb;
+                                border-radius: 4px;
+                                background: #fff;
+                                box-shadow: 0 8px 28px rgba( 0, 0, 0, 0.18 );
+                                color: #333;
+                                font-family: sans-serif;
+                        }
+
+                        .upload-svg-dialog h2 {
+                                margin: 0 0 0.45em;
+                                font-size: 1.05em;
+                                font-weight: 600;
+                        }
+
+                        .upload-svg-dialog p {
+                                margin: 0 0 0.75em;
+                                font-size: 0.92em;
+                                line-height: 1.4;
+                                color: #555;
+                        }
+
+                        .upload-svg-dialog-diff {
+                                margin: 0 0 0.75em;
+                                padding: 0.55em 0.7em;
+                                border: 1px solid #ddd;
+                                border-radius: 3px;
+                                background: #fafafa;
+                                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                                font-size: 0.82em;
+                                line-height: 1.45;
+                                color: #444;
+                                white-space: pre-wrap;
+                        }
+
+                        .upload-svg-dialog-thumbs {
+                                display: grid;
+                                grid-template-columns: 1fr 1fr;
+                                gap: 0.65em;
+                                margin: 0 0 0.9em;
+                        }
+
+                        .upload-svg-dialog-thumb {
+                                margin: 0;
+                                padding: 0.45em;
+                                border: 1px solid #ddd;
+                                border-radius: 3px;
+                                background: #fafafa;
+                                text-align: center;
+                        }
+
+                        .upload-svg-dialog-thumb figcaption {
+                                margin: 0 0 0.35em;
+                                font-size: 0.8em;
+                                font-weight: 600;
+                                color: #555;
+                        }
+
+                        .upload-svg-dialog-thumb svg {
+                                display: block;
+                                width: 100%;
+                                height: 7.5em;
+                                background: #fff;
+                                border: 1px solid #eee;
+                                border-radius: 2px;
+                        }
+
+                        .upload-svg-dialog-thumb .thumb-missing {
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                height: 7.5em;
+                                font-size: 0.8em;
+                                color: #888;
+                                background: #fff;
+                                border: 1px solid #eee;
+                                border-radius: 2px;
+                        }
+
+                        .upload-svg-dialog-actions {
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 0.4em;
+                                justify-content: flex-end;
+                        }
+
+                        .upload-svg-dialog-actions button {
+                                margin: 0;
+                                padding: 0.4em 0.85em;
+                                font-family: sans-serif;
+                                font-size: 0.9em;
+                                color: #444;
+                                background: #f7f7f7;
+                                border: 1px solid #bbb;
+                                border-radius: 3px;
+                                cursor: pointer;
+                        }
+
+                        .upload-svg-dialog-actions button:hover {
+                                background: #eee;
+                        }
+
+                        .upload-svg-dialog-actions button.primary {
+                                color: #fff;
+                                background: #444;
+                                border-color: #333;
+                        }
+
+                        .upload-svg-dialog-actions button.primary:hover {
+                                background: #333;
                         }
 
                         #paint-brush-cursor {
@@ -333,7 +460,7 @@
                                                         Peeled redo tails are kept in IndexedDB so undoing a branch-point edit can restore them. 
                                                         Save with a name to store a separate named history. 
                                                         Select a name and version to restore.</p>
-                                                <p>Download SVG of the unrolled pattern to print (includes paint).</p>
+                                                <p>Download SVG of the unrolled pattern to print (includes cone params, paint raster, and brush strokes). Upload SVG restores cone params when present, then brush strokes onto the pattern.</p>
                                         </span>
                                 </span>
                         </div>
@@ -913,6 +1040,56 @@ import * as THREE from 'three/webgpu';
 
                                 } );
                                 toolButtons.appendChild( downloadButton );
+
+                                const uploadInput = document.createElement( 'input' );
+                                uploadInput.type = 'file';
+                                uploadInput.accept = '.svg,image/svg+xml';
+                                uploadInput.style.display = 'none';
+                                uploadInput.addEventListener( 'change', function () {
+
+                                        const file = uploadInput.files && uploadInput.files[ 0 ];
+                                        uploadInput.value = '';
+                                        if ( ! file ) return;
+
+                                        const reader = new FileReader();
+                                        reader.onload = function () {
+
+                                                Promise.resolve()
+                                                        .then( function () {
+
+                                                                return applyPaintStrokesFromSvgText( String( reader.result || '' ) );
+
+                                                        } )
+                                                        .catch( function ( err ) {
+
+                                                                console.warn( 'Failed to upload SVG', err );
+                                                                window.alert( err && err.message ? err.message : 'Failed to import SVG.' );
+
+                                                        } );
+
+                                        };
+
+                                        reader.onerror = function () {
+
+                                                window.alert( 'Failed to read SVG file.' );
+
+                                        };
+
+                                        reader.readAsText( file );
+
+                                } );
+                                toolButtons.appendChild( uploadInput );
+
+                                const uploadButton = document.createElement( 'button' );
+                                uploadButton.type = 'button';
+                                uploadButton.className = 'upload-svg';
+                                uploadButton.textContent = 'Upload SVG';
+                                uploadButton.addEventListener( 'click', function () {
+
+                                        uploadInput.click();
+
+                                } );
+                                toolButtons.appendChild( uploadButton );
                                 headerElement.appendChild( toolButtons );
 
                                 const flattenedGeometry = createFlattenedConeGeometry( coneRadius, coneHeight, coneSegments, coneAngle, localPlane1, localPlane2, knotClippingGroups[ 0 ].enabled );
@@ -1736,7 +1913,7 @@ import * as THREE from 'three/webgpu';
                                         if ( points.length < 2 ) return null;
 
                                         return {
-                                                color: record.color || '#c43c3c',
+                                                color: paintColorToCssHex( record.color || '#c43c3c' ),
                                                 opacity: record.opacity != null ? record.opacity : 1,
                                                 brushSize: record.brushSize != null ? record.brushSize : 0.035,
                                                 softness: record.softness != null ? record.softness : 0.7,
@@ -2841,8 +3018,8 @@ import * as THREE from 'three/webgpu';
                                         },
                                         set color( v ) {
 
-                                                paintColor = v;
-                                                if ( paintColorInput ) paintColorInput.value = v;
+                                                paintColor = paintColorToCssHex( v );
+                                                if ( paintColorInput ) paintColorInput.value = paintColor;
 
                                         },
                                         get opacity() {
@@ -3459,6 +3636,20 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function paintColorToCssHex( value ) {
+
+                                        try {
+
+                                                return '#' + new THREE.Color( value ).getHexString();
+
+                                        } catch ( e ) {
+
+                                                return '#c43c3c';
+
+                                        }
+
+                                }
+
                                 function getPaintUvRadii( v, brushSize ) {
 
                                         const slant = Math.max( 1e-6, coneRadius * getConeDevelopableK( coneAngle ) );
@@ -3742,7 +3933,7 @@ import * as THREE from 'three/webgpu';
                                         if ( ! stroke || ! stroke.points || stroke.points.length < 2 ) return;
 
                                         const record = {
-                                                color: stroke.color,
+                                                color: paintColorToCssHex( stroke.color ),
                                                 opacity: stroke.opacity,
                                                 brushSize: stroke.brushSize,
                                                 softness: stroke.softness,
@@ -4817,7 +5008,7 @@ import * as THREE from 'three/webgpu';
                                                 if ( sizeChanged ) ensureConeFitsInView();
                                                 syncConicEditors();
 
-                                                if ( 'paintColor' in params && params.paintColor ) paintColor = params.paintColor;
+                                                if ( 'paintColor' in params && params.paintColor ) paintColor = paintColorToCssHex( params.paintColor );
                                                 if ( 'paintOpacity' in params && params.paintOpacity != null ) paintOpacity = params.paintOpacity;
                                                 if ( 'paintBrushSize' in params && params.paintBrushSize != null ) paintBrushSize = params.paintBrushSize;
                                                 if ( 'paintBrushSoftness' in params && params.paintBrushSoftness != null ) paintBrushSoftness = params.paintBrushSoftness;
@@ -5336,9 +5527,11 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
-                                function flattenedGeometryToSVG( geometry ) {
+                                function computeFlattenedOutlinePath( geometry ) {
 
                                         const positions = geometry.getAttribute( 'position' );
+                                        if ( ! positions || positions.count < 3 ) return null;
+
                                         const index = geometry.index;
                                         const triangleCount = index ? index.count / 3 : positions.count / 3;
 
@@ -5478,8 +5671,10 @@ import * as THREE from 'three/webgpu';
 
                                         }
 
+                                        if ( ! Number.isFinite( minX ) || ! Number.isFinite( maxX ) ) return null;
+
                                         const padding = Math.max( maxX - minX, maxZ - minZ ) * 0.05 || 0.1;
-                                        const svgScale = 100;
+                                        const svgScale = PAINT_SVG_SCALE;
                                         const viewMinX = ( minX - padding ) * svgScale;
                                         const viewMinY = ( - maxZ - padding ) * svgScale;
                                         const viewWidth = ( ( maxX - minX ) + padding * 2 ) * svgScale;
@@ -5528,22 +5723,94 @@ import * as THREE from 'three/webgpu';
                                         }
 
                                         pathData = pathData.trim();
-                                        const strokeWidth = ( Math.max( viewWidth, viewHeight ) * 0.002 ).toFixed( 5 );
+                                        if ( ! pathData ) return null;
+
+                                        return {
+                                                pathData: pathData,
+                                                viewBox: viewMinX.toFixed( 5 ) + ' ' + viewMinY.toFixed( 5 ) + ' ' +
+                                                        viewWidth.toFixed( 5 ) + ' ' + viewHeight.toFixed( 5 ),
+                                                strokeWidth: ( Math.max( viewWidth, viewHeight ) * 0.002 ).toFixed( 5 ),
+                                                minX: minX,
+                                                maxX: maxX,
+                                                minZ: minZ,
+                                                maxZ: maxZ,
+                                                svgScale: svgScale
+                                        };
+
+                                }
+
+                                function flattenedGeometryToSVG( geometry ) {
+
+                                        const outline = computeFlattenedOutlinePath( geometry );
+                                        if ( ! outline ) {
+
+                                                return [
+                                                        '<?xml version="1.0" encoding="UTF-8"?>',
+                                                        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">',
+                                                        '</svg>'
+                                                ].join( '\n' );
+
+                                        }
+
+                                        const {
+                                                pathData,
+                                                viewBox,
+                                                strokeWidth,
+                                                minX,
+                                                maxX,
+                                                minZ,
+                                                maxZ,
+                                                svgScale
+                                        } = outline;
+
                                         const lines = [
                                                 '<?xml version="1.0" encoding="UTF-8"?>',
-                                                '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="' +
-                                                        viewMinX.toFixed( 5 ) + ' ' + viewMinY.toFixed( 5 ) + ' ' +
-                                                        viewWidth.toFixed( 5 ) + ' ' + viewHeight.toFixed( 5 ) + '">'
+                                                '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="' + viewBox + '">'
                                         ];
 
                                         const paintHref = rasterizeFlatGeometryPaintDataURL( geometry, minX, maxX, minZ, maxZ );
-                                        if ( paintHref && pathData ) {
+                                        const strokePayload = serializePaintStrokesForSvg( paintStrokes );
+                                        const strokePaths = buildPaintStrokeSvgPaths( geometry, paintStrokes, svgScale );
+                                        const needsClip = !!( pathData && ( paintHref || strokePaths.length ) );
+
+                                        if ( needsClip ) {
 
                                                 lines.push( '  <defs>' );
                                                 lines.push( '    <clipPath id="patternClip">' );
                                                 lines.push( '      <path d="' + pathData + '" />' );
                                                 lines.push( '    </clipPath>' );
                                                 lines.push( '  </defs>' );
+
+                                        }
+
+                                        if ( strokePayload.length ) {
+
+                                                // Escaped JSON so the strokes can be reloaded from the SVG later.
+                                                const json = JSON.stringify( {
+                                                        version: 1,
+                                                        unit: 'uv',
+                                                        brushSizeUnit: 'slantFraction',
+                                                        strokes: strokePayload
+                                                } ).replace( /</g, '\\u003c' );
+                                                lines.push( '  <script type="application/json" id="brush-strokes">' + json + '</scr' + 'ipt>' );
+
+                                        }
+
+                                        const coneParamsJson = JSON.stringify( serializeConeParamsForSvg() ).replace( /</g, '\\u003c' );
+                                        lines.push( '  <script type="application/json" id="cone-params">' + coneParamsJson + '</scr' + 'ipt>' );
+
+                                        if ( strokePaths.length ) {
+
+                                                // Hidden vector paths keep editable geometry without double-compositing
+                                                // through the soft paint raster's transparent pixels.
+                                                lines.push( '  <g id="brush-stroke-paths" display="none" clip-path="url(#patternClip)" fill="none" stroke-linecap="round" stroke-linejoin="round">' );
+                                                for ( let i = 0; i < strokePaths.length; i ++ ) lines.push( '    ' + strokePaths[ i ] );
+                                                lines.push( '  </g>' );
+
+                                        }
+
+                                        if ( paintHref && pathData ) {
+
                                                 lines.push(
                                                         '  <image clip-path="url(#patternClip)" preserveAspectRatio="none" href="' + paintHref + '" xlink:href="' + paintHref + '" x="' +
                                                         ( minX * svgScale ).toFixed( 5 ) + '" y="' + ( - maxZ * svgScale ).toFixed( 5 ) + '" width="' +
@@ -5558,6 +5825,674 @@ import * as THREE from 'three/webgpu';
                                         );
                                         lines.push( '</svg>' );
                                         return lines.join( '\n' );
+
+                                }
+
+                                function serializePaintStrokesForSvg( strokes ) {
+
+                                        const list = strokes || [];
+                                        const out = [];
+                                        for ( let i = 0; i < list.length; i ++ ) {
+
+                                                const stroke = list[ i ];
+                                                if ( ! stroke || ! stroke.points || stroke.points.length < 2 ) continue;
+                                                out.push( {
+                                                        color: paintColorToCssHex( stroke.color != null ? stroke.color : paintColor ),
+                                                        opacity: stroke.opacity != null ? stroke.opacity : paintOpacity,
+                                                        brushSize: stroke.brushSize != null ? stroke.brushSize : paintBrushSize,
+                                                        softness: stroke.softness != null ? stroke.softness : paintBrushSoftness,
+                                                        erase: !! stroke.erase,
+                                                        points: Array.from( stroke.points )
+                                                } );
+
+                                        }
+
+                                        return out;
+
+                                }
+
+                                function paintUvToLocalXZ( u, v, flatGeometry ) {
+
+                                        const offset = getFlatDevelopableOffset( flatGeometry );
+                                        const k = getConeDevelopableK( coneAngle );
+                                        const theta = u * Math.PI * 2;
+                                        const r = coneRadiusFractionFromUvV( v ) * coneRadius;
+                                        const R = r * k;
+                                        const alpha = theta / k;
+                                        return {
+                                                x: R * Math.cos( alpha ) - ( offset.x || 0 ),
+                                                z: R * Math.sin( alpha ) - ( offset.z || 0 )
+                                        };
+
+                                }
+
+                                function buildPaintStrokeSvgPaths( geometry, strokes, svgScale ) {
+
+                                        const list = strokes || [];
+                                        const paths = [];
+                                        const format = function ( value ) {
+
+                                                return ( value * svgScale ).toFixed( 5 );
+
+                                        };
+
+                                        for ( let s = 0; s < list.length; s ++ ) {
+
+                                                const stroke = list[ s ];
+                                                if ( ! stroke || ! stroke.points || stroke.points.length < 2 ) continue;
+                                                // Erase strokes are kept in JSON only; SVG can't subtract paints cleanly.
+                                                if ( stroke.erase ) continue;
+
+                                                const points = stroke.points;
+                                                const brushSize = stroke.brushSize != null ? stroke.brushSize : paintBrushSize;
+                                                const opacity = stroke.opacity != null ? stroke.opacity : paintOpacity;
+                                                const color = paintColorToCssHex( stroke.color != null ? stroke.color : paintColor );
+                                                const width = Math.max( 0.01, getPaintBrushWorldRadius( brushSize ) * 2 * svgScale );
+
+                                                let pathD = '';
+                                                let prevU = null;
+
+                                                for ( let i = 0; i + 1 < points.length; i += 2 ) {
+
+                                                        const u = points[ i ];
+                                                        const v = points[ i + 1 ];
+                                                        const local = paintUvToLocalXZ( u, v, geometry );
+                                                        const x = format( local.x );
+                                                        const y = format( - local.z );
+
+                                                        if ( prevU == null ) {
+
+                                                                pathD += 'M ' + x + ' ' + y;
+
+                                                        } else {
+
+                                                                let du = u - prevU;
+                                                                if ( du > 0.5 || du < - 0.5 ) {
+
+                                                                        // UV seam wrap — start a new subpath.
+                                                                        pathD += ' M ' + x + ' ' + y;
+
+                                                                } else {
+
+                                                                        pathD += ' L ' + x + ' ' + y;
+
+                                                                }
+
+                                                        }
+
+                                                        prevU = u;
+
+                                                }
+
+                                                if ( ! pathD ) continue;
+
+                                                paths.push(
+                                                        '<path d="' + pathD + '" stroke="' + String( color ).replace( /"/g, '' ) +
+                                                        '" stroke-width="' + width.toFixed( 5 ) +
+                                                        '" stroke-opacity="' + Math.max( 0, Math.min( 1, opacity ) ).toFixed( 4 ) +
+                                                        '" data-brush-size="' + brushSize +
+                                                        '" data-softness="' + ( stroke.softness != null ? stroke.softness : paintBrushSoftness ) + '" />'
+                                                );
+
+                                        }
+
+                                        return paths;
+
+                                }
+
+                                const PAINT_SVG_SCALE = 100;
+
+                                function parseSvgPathPolylines( d ) {
+
+                                        const commands = String( d || '' ).match( /[MmLl]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g );
+                                        if ( ! commands || ! commands.length ) return [];
+
+                                        const points = [];
+                                        let i = 0;
+                                        let x = 0;
+                                        let y = 0;
+                                        let havePoint = false;
+
+                                        while ( i < commands.length ) {
+
+                                                const token = commands[ i ++ ];
+                                                const lower = token.toLowerCase();
+
+                                                if ( lower === 'm' || lower === 'l' ) {
+
+                                                        if ( i + 1 >= commands.length ) break;
+                                                        const n0 = parseFloat( commands[ i ++ ] );
+                                                        const n1 = parseFloat( commands[ i ++ ] );
+                                                        if ( ! Number.isFinite( n0 ) || ! Number.isFinite( n1 ) ) break;
+
+                                                        if ( token === 'm' || token === 'l' ) {
+
+                                                                x += n0;
+                                                                y += n1;
+
+                                                        } else {
+
+                                                                x = n0;
+                                                                y = n1;
+
+                                                        }
+
+                                                        points.push( x, y );
+                                                        havePoint = true;
+
+                                                        // Implicit line-tos after an initial moveto pair.
+                                                        if ( lower === 'm' ) {
+
+                                                                while ( i + 1 < commands.length && ! /[a-zA-Z]/.test( commands[ i ] ) ) {
+
+                                                                        const q0 = parseFloat( commands[ i ++ ] );
+                                                                        const q1 = parseFloat( commands[ i ++ ] );
+                                                                        if ( ! Number.isFinite( q0 ) || ! Number.isFinite( q1 ) ) break;
+                                                                        if ( token === 'm' ) {
+
+                                                                                x += q0;
+                                                                                y += q1;
+
+                                                                        } else {
+
+                                                                                x = q0;
+                                                                                y = q1;
+
+                                                                        }
+
+                                                                        points.push( x, y );
+
+                                                                }
+
+                                                        }
+
+                                                } else if ( havePoint && Number.isFinite( parseFloat( token ) ) && i < commands.length ) {
+
+                                                        // Bare coordinate pair — treat as absolute lineto.
+                                                        const n1 = parseFloat( commands[ i ++ ] );
+                                                        const n0 = parseFloat( token );
+                                                        if ( ! Number.isFinite( n1 ) ) break;
+                                                        x = n0;
+                                                        y = n1;
+                                                        points.push( x, y );
+
+                                                }
+
+                                        }
+
+                                        return points;
+
+                                }
+
+                                function brushSizeFromSvgStrokeWidth( strokeWidth ) {
+
+                                        const width = Number( strokeWidth );
+                                        if ( ! Number.isFinite( width ) || width <= 0 ) return paintBrushSize;
+                                        const brushWorld = width / ( 2 * PAINT_SVG_SCALE );
+                                        const slant = Math.max( 1e-6, coneRadius * getConeDevelopableK( coneAngle ) );
+                                        return Math.max( 0.005, Math.min( 0.12, brushWorld / slant ) );
+
+                                }
+
+                                function importPaintStrokesFromSvgPaths( svgDoc, geometry ) {
+
+                                        const group = svgDoc.getElementById( 'brush-stroke-paths' );
+                                        if ( ! group ) return [];
+
+                                        const pathEls = group.querySelectorAll( 'path' );
+                                        const strokes = [];
+
+                                        for ( let i = 0; i < pathEls.length; i ++ ) {
+
+                                                const pathEl = pathEls[ i ];
+                                                const flatPoints = parseSvgPathPolylines( pathEl.getAttribute( 'd' ) );
+                                                if ( flatPoints.length < 4 ) continue;
+
+                                                const uvPoints = [];
+                                                for ( let p = 0; p + 1 < flatPoints.length; p += 2 ) {
+
+                                                        const localX = flatPoints[ p ] / PAINT_SVG_SCALE;
+                                                        const localZ = - flatPoints[ p + 1 ] / PAINT_SVG_SCALE;
+                                                        const uv = flatLocalToPaintUv( localX, localZ, geometry );
+                                                        uvPoints.push( uv.u, uv.v );
+
+                                                }
+
+                                                if ( uvPoints.length < 2 ) continue;
+
+                                                const dataBrush = pathEl.getAttribute( 'data-brush-size' );
+                                                const dataSoft = pathEl.getAttribute( 'data-softness' );
+                                                const strokeWidth = pathEl.getAttribute( 'stroke-width' );
+                                                const strokeOpacity = pathEl.getAttribute( 'stroke-opacity' );
+
+                                                strokes.push( {
+                                                        color: paintColorToCssHex( pathEl.getAttribute( 'stroke' ) || paintColor ),
+                                                        opacity: strokeOpacity != null && strokeOpacity !== ''
+                                                                ? Math.max( 0, Math.min( 1, parseFloat( strokeOpacity ) ) )
+                                                                : 1,
+                                                        brushSize: dataBrush != null && dataBrush !== ''
+                                                                ? Math.max( 0.005, Math.min( 0.12, parseFloat( dataBrush ) ) )
+                                                                : brushSizeFromSvgStrokeWidth( strokeWidth ),
+                                                        softness: dataSoft != null && dataSoft !== ''
+                                                                ? Math.max( 0, Math.min( 1, parseFloat( dataSoft ) ) )
+                                                                : paintBrushSoftness,
+                                                        erase: false,
+                                                        points: new Float32Array( uvPoints )
+                                                } );
+
+                                        }
+
+                                        return strokes;
+
+                                }
+
+                                function serializeConeParamsForSvg() {
+
+                                        return {
+                                                version: 1,
+                                                applyCuts: !!( knotClippingGroups[ 0 ] && knotClippingGroups[ 0 ].enabled ),
+                                                ClipShadows: !!( knotClippingGroups[ 0 ] && knotClippingGroups[ 0 ].clipShadows ),
+                                                coneAngle: coneAngle,
+                                                scale: coneScale,
+                                                cutAngle: cutAngle,
+                                                cutAzimuth: cutAzimuth,
+                                                cutUpOffset: cutUpOffsetPct,
+                                                cutDownOffset: cutDownOffsetPct,
+                                                cutOffsetsInterval: true
+                                        };
+
+                                }
+
+                                function readConeParamsFromSvg( svgDoc ) {
+
+                                        const el = svgDoc.getElementById( 'cone-params' );
+                                        if ( ! el ) return null;
+
+                                        let raw;
+                                        try {
+
+                                                raw = JSON.parse( el.textContent || '' );
+
+                                        } catch ( e ) {
+
+                                                throw new Error( 'Invalid cone-params JSON in SVG.' );
+
+                                        }
+
+                                        if ( ! raw || typeof raw !== 'object' ) {
+
+                                                throw new Error( 'Invalid cone-params payload in SVG.' );
+
+                                        }
+
+                                        const coneAngleValue = Number( raw.coneAngle );
+                                        const scaleValue = Number( raw.scale );
+                                        const cutAngleValue = Number( raw.cutAngle );
+                                        const cutAzimuthValue = raw.cutAzimuth != null ? Number( raw.cutAzimuth ) : Math.PI / 2;
+                                        const cutUpOffsetValue = Number( raw.cutUpOffset );
+                                        const cutDownOffsetValue = Number( raw.cutDownOffset );
+
+                                        if (
+                                                ! Number.isFinite( coneAngleValue ) ||
+                                                ! Number.isFinite( scaleValue ) ||
+                                                ! Number.isFinite( cutAngleValue ) ||
+                                                ! Number.isFinite( cutAzimuthValue ) ||
+                                                ! Number.isFinite( cutUpOffsetValue ) ||
+                                                ! Number.isFinite( cutDownOffsetValue ) ||
+                                                scaleValue <= 0
+                                        ) {
+
+                                                throw new Error( 'cone-params in SVG are missing required numeric fields.' );
+
+                                        }
+
+                                        // Rebuild parametrically from the embedded cone data (no mesh IDs in SVG).
+                                        return {
+                                                applyCuts: !! raw.applyCuts,
+                                                ClipShadows: !! raw.ClipShadows,
+                                                coneAngle: coneAngleValue,
+                                                scale: scaleValue,
+                                                cutAngle: cutAngleValue,
+                                                cutAzimuth: cutAzimuthValue,
+                                                cutUpOffset: cutUpOffsetValue,
+                                                cutDownOffset: cutDownOffsetValue,
+                                                cutOffsetsInterval: true,
+                                                patternFirst: false,
+                                                coneUsesParametricGeometry: true,
+                                                paintStrokeIds: []
+                                        };
+
+                                }
+
+                                function formatConeParamForDiff( key, value ) {
+
+                                        if ( typeof value === 'boolean' ) return value ? 'true' : 'false';
+                                        if ( ! Number.isFinite( value ) ) return String( value );
+                                        return Number( value ).toFixed( 2 );
+
+                                }
+
+                                function summarizeConeParamsDiff( svgConeParams ) {
+
+                                        const current = serializeConeParamsForSvg();
+                                        const labels = {
+                                                applyCuts: 'applyCuts',
+                                                ClipShadows: 'ClipShadows',
+                                                coneAngle: 'coneAngle',
+                                                scale: 'scale',
+                                                cutAngle: 'cutAngle',
+                                                cutAzimuth: 'cutAzimuth',
+                                                cutUpOffset: 'cutUpOffset',
+                                                cutDownOffset: 'cutDownOffset'
+                                        };
+                                        const keys = Object.keys( labels );
+                                        const lines = [];
+
+                                        for ( let i = 0; i < keys.length; i ++ ) {
+
+                                                const key = keys[ i ];
+                                                const a = current[ key ];
+                                                const b = svgConeParams[ key ];
+                                                let differs = false;
+
+                                                if ( typeof a === 'boolean' || typeof b === 'boolean' ) {
+
+                                                        differs = !! a !== !! b;
+
+                                                } else {
+
+                                                        differs = ! Number.isFinite( a ) || ! Number.isFinite( b ) || Math.abs( a - b ) > 1e-9;
+
+                                                }
+
+                                                if ( ! differs ) continue;
+
+                                                lines.push(
+                                                        labels[ key ] + ': ' +
+                                                        formatConeParamForDiff( key, a ) +
+                                                        ' → ' +
+                                                        formatConeParamForDiff( key, b )
+                                                );
+
+                                        }
+
+                                        return lines;
+
+                                }
+
+                                function coneSvgParamsMatchCurrent( svgConeParams ) {
+
+                                        return summarizeConeParamsDiff( svgConeParams ).length === 0;
+
+                                }
+
+                                function extractOutlineFromSvgDoc( svgDoc ) {
+
+                                        if ( ! svgDoc || ! svgDoc.documentElement ) return null;
+
+                                        const root = svgDoc.documentElement;
+                                        const viewBox = root.getAttribute( 'viewBox' ) || '0 0 100 100';
+                                        const paths = svgDoc.querySelectorAll( 'path' );
+                                        let outline = null;
+
+                                        for ( let i = 0; i < paths.length; i ++ ) {
+
+                                                const path = paths[ i ];
+                                                if ( path.closest( '#brush-stroke-paths' ) ) continue;
+                                                if ( path.closest( 'clipPath' ) ) continue;
+                                                const d = path.getAttribute( 'd' );
+                                                if ( ! d || ! d.trim() ) continue;
+                                                outline = path;
+
+                                        }
+
+                                        if ( ! outline ) return null;
+
+                                        const parts = String( viewBox ).trim().split( /[\s,]+/ ).map( Number );
+                                        const viewWidth = Number.isFinite( parts[ 2 ] ) ? parts[ 2 ] : 100;
+                                        const viewHeight = Number.isFinite( parts[ 3 ] ) ? parts[ 3 ] : 100;
+                                        const attrWidth = parseFloat( outline.getAttribute( 'stroke-width' ) );
+                                        const strokeWidth = Number.isFinite( attrWidth ) && attrWidth > 0
+                                                ? attrWidth
+                                                : Math.max( viewWidth, viewHeight ) * 0.002;
+
+                                        return {
+                                                pathData: outline.getAttribute( 'd' ).trim(),
+                                                viewBox: viewBox,
+                                                strokeWidth: String( strokeWidth )
+                                        };
+
+                                }
+
+                                function createOutlineThumbnailFigure( label, outline ) {
+
+                                        const figure = document.createElement( 'figure' );
+                                        figure.className = 'upload-svg-dialog-thumb';
+
+                                        const caption = document.createElement( 'figcaption' );
+                                        caption.textContent = label;
+                                        figure.appendChild( caption );
+
+                                        if ( ! outline || ! outline.pathData ) {
+
+                                                const missing = document.createElement( 'div' );
+                                                missing.className = 'thumb-missing';
+                                                missing.textContent = 'No outline';
+                                                figure.appendChild( missing );
+                                                return figure;
+
+                                        }
+
+                                        const svgNS = 'http://www.w3.org/2000/svg';
+                                        const svg = document.createElementNS( svgNS, 'svg' );
+                                        svg.setAttribute( 'viewBox', outline.viewBox || '0 0 100 100' );
+                                        svg.setAttribute( 'preserveAspectRatio', 'xMidYMid meet' );
+
+                                        const path = document.createElementNS( svgNS, 'path' );
+                                        path.setAttribute( 'd', outline.pathData );
+                                        path.setAttribute( 'fill', 'none' );
+                                        path.setAttribute( 'stroke', '#222' );
+                                        path.setAttribute( 'stroke-width', outline.strokeWidth || '1' );
+                                        path.setAttribute( 'stroke-linejoin', 'round' );
+                                        path.setAttribute( 'stroke-linecap', 'round' );
+                                        svg.appendChild( path );
+                                        figure.appendChild( svg );
+                                        return figure;
+
+                                }
+
+                                function askSvgConeParamsChoice( svgConeParams, svgDoc ) {
+
+                                        return new Promise( function ( resolve ) {
+
+                                                const diffLines = summarizeConeParamsDiff( svgConeParams );
+                                                const diffText = diffLines.length
+                                                        ? diffLines.join( '\n' )
+                                                        : '(no field-level differences)';
+
+                                                const backdrop = document.createElement( 'div' );
+                                                backdrop.className = 'upload-svg-dialog-backdrop';
+                                                backdrop.setAttribute( 'role', 'presentation' );
+
+                                                const dialog = document.createElement( 'div' );
+                                                dialog.className = 'upload-svg-dialog';
+                                                dialog.setAttribute( 'role', 'dialog' );
+                                                dialog.setAttribute( 'aria-modal', 'true' );
+                                                dialog.setAttribute( 'aria-labelledby', 'upload-svg-dialog-title' );
+
+                                                const title = document.createElement( 'h2' );
+                                                title.id = 'upload-svg-dialog-title';
+                                                title.textContent = 'Cone settings differ';
+
+                                                const intro = document.createElement( 'p' );
+                                                intro.textContent = 'This SVG’s cone parameters differ from the current scene:';
+
+                                                const diff = document.createElement( 'div' );
+                                                diff.className = 'upload-svg-dialog-diff';
+                                                diff.textContent = diffText;
+
+                                                const thumbs = document.createElement( 'div' );
+                                                thumbs.className = 'upload-svg-dialog-thumbs';
+                                                const currentGeometry = scenes[ 0 ] && scenes[ 0 ].userData.flattenedMesh
+                                                        && scenes[ 0 ].userData.flattenedMesh.geometry;
+                                                const currentOutline = currentGeometry ? computeFlattenedOutlinePath( currentGeometry ) : null;
+                                                const uploadedOutline = extractOutlineFromSvgDoc( svgDoc );
+                                                thumbs.appendChild( createOutlineThumbnailFigure( 'Current shape', currentOutline ) );
+                                                thumbs.appendChild( createOutlineThumbnailFigure( 'Uploaded shape', uploadedOutline ) );
+
+                                                const keepNote = document.createElement( 'p' );
+                                                keepNote.innerHTML =
+                                                        '<strong>Keep current</strong> maps the brush strokes onto the current shape without changing cone geometry. ' +
+                                                        '<strong>Load SVG</strong> params updates the cone first, then maps the paint onto that shape.';
+
+                                                const actions = document.createElement( 'div' );
+                                                actions.className = 'upload-svg-dialog-actions';
+                                                actions.innerHTML =
+                                                        '<button type="button" data-choice="cancel">Cancel</button>' +
+                                                        '<button type="button" data-choice="current">Keep current</button>' +
+                                                        '<button type="button" class="primary" data-choice="svg">Load SVG params</button>';
+
+                                                dialog.appendChild( title );
+                                                dialog.appendChild( intro );
+                                                dialog.appendChild( diff );
+                                                dialog.appendChild( thumbs );
+                                                dialog.appendChild( keepNote );
+                                                dialog.appendChild( actions );
+                                                backdrop.appendChild( dialog );
+                                                document.body.appendChild( backdrop );
+
+                                                function finish( choice ) {
+
+                                                        backdrop.removeEventListener( 'keydown', onKeyDown );
+                                                        if ( backdrop.parentNode ) backdrop.parentNode.removeChild( backdrop );
+                                                        resolve( choice );
+
+                                                }
+
+                                                function onKeyDown( event ) {
+
+                                                        if ( event.key === 'Escape' ) {
+
+                                                                event.preventDefault();
+                                                                finish( 'cancel' );
+
+                                                        }
+
+                                                }
+
+                                                backdrop.addEventListener( 'click', function ( event ) {
+
+                                                        if ( event.target === backdrop ) finish( 'cancel' );
+
+                                                } );
+                                                backdrop.addEventListener( 'keydown', onKeyDown );
+                                                dialog.addEventListener( 'click', function ( event ) {
+
+                                                        const button = event.target.closest( 'button[data-choice]' );
+                                                        if ( ! button ) return;
+                                                        finish( button.getAttribute( 'data-choice' ) );
+
+                                                } );
+
+                                                const primary = dialog.querySelector( 'button.primary' );
+                                                if ( primary ) primary.focus();
+
+                                        } );
+
+                                }
+
+                                function applyPaintStrokesFromSvgText( svgText ) {
+
+                                        const doc = new DOMParser().parseFromString( svgText, 'image/svg+xml' );
+                                        if ( doc.querySelector( 'parsererror' ) ) {
+
+                                                throw new Error( 'Invalid SVG file.' );
+
+                                        }
+
+                                        return applyPaintStrokesFromSvgDocument( doc );
+
+                                }
+
+                                async function applyPaintStrokesFromSvgDocument( doc ) {
+
+                                        const previousParams = getParams();
+                                        let coneParams = null;
+
+                                        try {
+
+                                                coneParams = readConeParamsFromSvg( doc );
+
+                                        } catch ( err ) {
+
+                                                // Present but unusable — fail the whole import with no scene changes.
+                                                throw err;
+
+                                        }
+
+                                        let applyConeParams = false;
+
+                                        if ( coneParams && ! coneSvgParamsMatchCurrent( coneParams ) ) {
+
+                                                const choice = await askSvgConeParamsChoice( coneParams, doc );
+                                                if ( choice === 'cancel' ) return;
+                                                applyConeParams = choice === 'svg';
+
+                                        } else if ( coneParams ) {
+
+                                                // Same as current — no need to re-apply cone params.
+                                                applyConeParams = false;
+
+                                        }
+
+                                        let startedMutation = false;
+
+                                        try {
+
+                                                if ( applyConeParams ) {
+
+                                                        startedMutation = true;
+                                                        await applyParams( coneParams );
+
+                                                }
+
+                                                const geometry = scenes[ 0 ] && scenes[ 0 ].userData.flattenedMesh
+                                                        && scenes[ 0 ].userData.flattenedMesh.geometry;
+                                                if ( ! geometry ) throw new Error( 'No flattened pattern to paint onto.' );
+
+                                                const strokes = importPaintStrokesFromSvgPaths( doc, geometry );
+                                                if ( ! strokes.length ) {
+
+                                                        throw new Error( 'No brush-stroke paths found in SVG (expected #brush-stroke-paths).' );
+
+                                                }
+
+                                                startedMutation = true;
+                                                clearAllPaint( { skipAutosave: true } );
+                                                for ( let i = 0; i < strokes.length; i ++ ) commitPaintStroke( strokes[ i ] );
+                                                rebuildPaintFromStrokes( paintStrokes );
+                                                scheduleAutosave();
+                                                requestRender();
+
+                                        } catch ( err ) {
+
+                                                if ( startedMutation ) {
+
+                                                        try {
+
+                                                                await applyParams( previousParams );
+
+                                                        } catch ( restoreErr ) {
+
+                                                                console.warn( 'Failed to restore previous params after SVG import error', restoreErr );
+
+                                                        }
+
+                                                }
+
+                                                throw err;
+
+                                        }
 
                                 }
 
