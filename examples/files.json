@@ -1,5 +1,6 @@
 {
 	"webgpu": [
-		"webgpu_multiple_elements"
+		"webgpu_multiple_elements",
+		"conic_unroll"
 	]
 }
