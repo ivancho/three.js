@@ -615,6 +615,10 @@ import * as THREE from 'three/webgpu';
                                 material.colorNode = vec4( mix( baseColorNode, paintSample.rgb, paintSample.a ), 1 );
                                 material.opacityNode = opacitySample.r;
                                 material.transparent = true;
+                                // Discard clear paint so those fragments do not write depth. Otherwise looking
+                                // through a see-through spot leaves the near wall in the depth buffer and
+                                // occludes the far side of the cone (which is still opaque).
+                                if ( material.alphaTest === 0 ) material.alphaTest = 1e-3;
 
                         }
 
