@@ -878,7 +878,7 @@ import * as THREE from 'three/webgpu';
                                 let coneAngle = 0.4;
                                 let coneScale = 1;
                                 let coneHeight = BASE_CONE_HEIGHT * coneScale;
-                                const coneSegments = 64;
+                                const coneSegments = 256;
                                 let coneRadius = Math.tan( coneAngle ) * coneHeight;
                                 // Cut offsets as signed % of cone height along the cut axis (interval endpoints).
                                 let cutUpOffsetPct = - 40;
