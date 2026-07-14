@@ -3587,6 +3587,7 @@ class Renderer {
 			overrideMaterial.displacementMap = material.displacementMap;
 			overrideMaterial.displacementScale = material.displacementScale;
 			overrideMaterial.displacementBias = material.displacementBias;
+			overrideMaterial.forceSinglePass = material.forceSinglePass;
 			overrideMaterial.transparent = material.transparent || material.transmission > 0 ||
 				( material.transmissionNode && material.transmissionNode.isNode ) ||
 				( material.backdropNode && material.backdropNode.isNode );
@@ -3605,9 +3606,21 @@ class Renderer {
 
 				}
 
+				const prevColorNode = overrideMaterial.colorNode;
+				const prevDepthNode = overrideMaterial.depthNode;
+				const prevPositionNode = overrideMaterial.positionNode;
+
 				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
 				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
 				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
+
+				if ( overrideMaterial.colorNode !== prevColorNode ||
+					overrideMaterial.depthNode !== prevDepthNode ||
+					overrideMaterial.positionNode !== prevPositionNode ) {
+
+					overrideMaterial.needsUpdate = true;
+
+				}
 
 			}
 
@@ -3617,21 +3630,35 @@ class Renderer {
 
 		//
 
-		if ( material.transparent === true && material.side === DoubleSide && material.forceSinglePass === false ) {
+			if ( material.transparent === true && material.side === DoubleSide && material.forceSinglePass === false ) {
 
-			material.side = BackSide;
-			this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, 'backSide' ); // create backSide pass id
+				if ( material.isShadowPassMaterial ) {
 
-			material.side = FrontSide;
-			this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, passId ); // use default pass id
+					// Front first, then back: thin / hollow casters need back faces (interiors) to
+					// survive when depths coincide; main transmission keeps Back→Front below.
+					material.side = FrontSide;
+					this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, passId );
 
-			material.side = DoubleSide;
+					material.side = BackSide;
+					this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, 'backSide' );
 
-		} else {
+				} else {
 
-			this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, passId );
+					material.side = BackSide;
+					this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, 'backSide' ); // create backSide pass id
 
-		}
+					material.side = FrontSide;
+					this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, passId ); // use default pass id
+
+				}
+
+				material.side = DoubleSide;
+
+			} else {
+
+				this._handleObjectFunction( object, material, scene, camera, lightsNode, group, clippingContext, passId );
+
+			}
 
 		//
 

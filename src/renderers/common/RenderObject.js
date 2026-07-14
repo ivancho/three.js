@@ -784,6 +784,12 @@ class RenderObject {
 
 						}
 
+					} else if ( value.isNode === true ) {
+
+						// Distinguish swapped override nodes (e.g. per-material castShadowNode
+						// on a shared shadow pass material) — Objects alone hash as '{}'.
+						valueKey += value.id;
+
 					}
 
 					valueKey += '}';
@@ -932,6 +938,12 @@ class RenderObject {
 		if ( this.object.receiveShadow ) {
 
 			cacheKey = hash( cacheKey, 1 );
+
+		}
+
+		if ( this.renderer.shadowMap.transmitted === true ) {
+
+			cacheKey = hash( cacheKey, 2 );
 
 		}
 

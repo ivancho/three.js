@@ -2,6 +2,7 @@ import ChainMap from './ChainMap.js';
 import RenderObject from './RenderObject.js';
 
 const _chainKeys = [];
+const _noSourceMaterial = {};
 
 /**
  * This module manages the render objects of the renderer.
@@ -97,6 +98,13 @@ class RenderObjects {
 		_chainKeys[ 1 ] = material;
 		_chainKeys[ 2 ] = renderContext;
 		_chainKeys[ 3 ] = lightsNode;
+		// Shadow override materials swap castShadowNode / forceSinglePass per source
+		// material without bumping material.version. Key by the object's material so
+		// glass caustics and opaque clay get separate pipelines when the mesh switches.
+		// WeakMap cannot use null — use a sentinel for the normal (non-shadow) path.
+		_chainKeys[ 4 ] = ( material.isShadowPassMaterial === true )
+			? ( this.renderer._currentSourceMaterial || _noSourceMaterial )
+			: _noSourceMaterial;
 
 		//
 
@@ -148,6 +156,7 @@ class RenderObjects {
 		_chainKeys[ 1 ] = null;
 		_chainKeys[ 2 ] = null;
 		_chainKeys[ 3 ] = null;
+		_chainKeys[ 4 ] = null;
 
 		//
 

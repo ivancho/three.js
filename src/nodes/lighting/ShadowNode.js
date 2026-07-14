@@ -277,6 +277,17 @@ class ShadowNode extends ShadowBaseNode {
 		this._currentShadowType = null;
 
 		/**
+		 * Cached value of `renderer.shadowMap.transmitted` when the shadow
+		 * output was built. Transmitted vs depth-only sampling is baked into
+		 * `_node`, so a change must rebuild.
+		 *
+		 * @type {?boolean}
+		 * @private
+		 * @default null
+		 */
+		this._currentTransmitted = null;
+
+		/**
 		 * A Weak Map holding the current frame ID per camera. Used
 		 * to control the update of shadow maps.
 		 *
@@ -655,8 +666,9 @@ class ShadowNode extends ShadowBaseNode {
 		return Fn( () => {
 
 			const currentShadowType = builder.renderer.shadowMap.type;
+			const currentTransmitted = builder.renderer.shadowMap.transmitted === true;
 
-			if ( this._currentShadowType !== currentShadowType ) {
+			if ( this._currentShadowType !== currentShadowType || this._currentTransmitted !== currentTransmitted ) {
 
 				this._reset();
 				this._node = null;
@@ -671,6 +683,7 @@ class ShadowNode extends ShadowBaseNode {
 
 				this._node = node = this.setupShadow( builder );
 				this._currentShadowType = currentShadowType;
+				this._currentTransmitted = currentTransmitted;
 
 			}
 
@@ -811,6 +824,7 @@ class ShadowNode extends ShadowBaseNode {
 	_reset() {
 
 		this._currentShadowType = null;
+		this._currentTransmitted = null;
 
 		disposeShadowMaterial( this.light );
 

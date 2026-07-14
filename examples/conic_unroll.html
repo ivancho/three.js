@@ -553,7 +553,7 @@
 
 import * as THREE from 'three/webgpu';
                                 import {
-                                        color, div, float, Fn, mix, mx_fractal_noise_float, mx_noise_float, mx_worley_noise_float,
+                                        abs, color, div, float, Fn, mix, mx_fractal_noise_float, mx_noise_float, mx_worley_noise_float,
                                         normalView, positionLocal, positionView, positionViewDirection, refract,
                                         smoothstep, texture, uniform, uv, vec2, vec3, vec4
                                 } from 'three/tsl';
@@ -610,11 +610,23 @@ import * as THREE from 'three/webgpu';
                                 const paintSample = texture( paintTexture, uv() );
                                 const opacitySample = texture( paintOpacityTexture, uv() );
 
-                                // Explicit a=1 so paint colorNode does not zero transmitted-shadow alpha
-                                // (Renderer multiplies castShadowNode.a by colorNode.a).
+                                // Explicit a=1: shadow alpha comes from castShadowNode (paint opacity map),
+                                // not colorNode.a (Renderer multiplies the two).
                                 material.colorNode = vec4( mix( baseColorNode, paintSample.rgb, paintSample.a ), 1 );
                                 material.opacityNode = opacitySample.r;
                                 material.transparent = true;
+
+                        }
+
+                        // Opaque materials write black umbra into the transmitted shadow map.
+                        // Paint opacity punches clear holes (same map as glass / the visible mesh).
+                        function applyOpaquePaintShadow( material ) {
+
+                                material.castShadowNode = Fn( () => {
+
+                                        return vec4( 0, 0, 0, texture( paintOpacityTexture, uv() ).r );
+
+                                } )();
 
                         }
 
@@ -691,6 +703,7 @@ import * as THREE from 'three/webgpu';
                                 const height = softPits.mul( 0.45 ).add( waves.mul( 0.5 ) ).add( grain.mul( 0.05 ) );
 
                                 applyPaintOverlay( material, color( 0xb8957e ) );
+                                applyOpaquePaintShadow( material );
                                 material.roughnessNode = float( 0.95 ).add( grain.mul( 0.04 ) );
                                 material.normalNode = bumpNormal( height.mul( 0.08 ) );
 
@@ -713,10 +726,10 @@ import * as THREE from 'three/webgpu';
                                 material.transparent = true;
                                 material.opacity = 1;
                                 material.color = baseCol;
-                                // Avoid dual-pass transparent shadows: with ClipShadows they corrupt
-                                // transmitted caustic color writes into a solid black umbra.
+                                // Single DoubleSide shadow pass so outer + inner walls both contribute
+                                // (dual Front/Back at equal shell depth lets one side wipe the other).
                                 material.forceSinglePass = true;
-                                material.shadowSide = THREE.FrontSide;
+                                material.shadowSide = THREE.DoubleSide;
                                 // Single full-view render — transmission samples this framebuffer correctly.
                                 material.transmission = 1;
                                 material.thickness = 0.25;
@@ -732,7 +745,13 @@ import * as THREE from 'three/webgpu';
                                 material.userData.baseColorHex = '#' + baseCol.getHexString();
                                 applyPaintOverlay( material, baseColorUniform );
 
-                                const causticOcclusion = uniform( 20 );
+                                // Floor of brightness for glancing walls (cone interiors rarely face the light).
+                                // Duck demo uses pow(n.z, 20); that needs near-orthogonal incidence.
+                                const causticGlancing = uniform( 0.45 );
+                                const causticStrengthUniform = uniform( 0.35 );
+                                const causticTransmissionUniform = uniform( 1 );
+                                material.userData.causticStrength = causticStrengthUniform;
+                                material.userData.causticTransmission = causticTransmissionUniform;
 
                                 material.castShadowPositionNode = Fn( () => {
 
@@ -743,9 +762,11 @@ import * as THREE from 'three/webgpu';
                                 material.castShadowNode = Fn( () => {
 
                                         const refractionVector = refract( positionViewDirection.negate(), normalView, div( 1.0, material.ior ) ).normalize();
-                                        const viewZ = normalView.z.pow( causticOcclusion );
+                                        // Linear face-weight with a high floor: steep cone walls stay visibly caustic.
+                                        const facingZ = abs( normalView.z );
+                                        const viewZ = mix( causticGlancing, float( 1 ), facingZ );
                                         const textureUV = refractionVector.xy.mul( 0.6 );
-                                        const chromaticAberrationOffset = normalView.z.pow( - 0.9 ).mul( 0.004 );
+                                        const chromaticAberrationOffset = mix( float( 0.008 ), float( 0.002 ), facingZ );
 
                                         const causticProjection = vec3(
                                                 texture( causticMap, textureUV.add( vec2( chromaticAberrationOffset.negate(), 0 ) ) ).r,
@@ -753,8 +774,13 @@ import * as THREE from 'three/webgpu';
                                                 texture( causticMap, textureUV.add( vec2( chromaticAberrationOffset, chromaticAberrationOffset ) ) ).b
                                         );
 
-                                        const causticRgb = causticProjection.mul( viewZ.mul( 25 ) ).add( viewZ ).mul( baseColorUniform );
-                                        return vec4( causticRgb, 1 );
+                                        // transmission→0: fade caustic to black umbra (opaque cast).
+                                        // Paint opacity→0: drop shadow alpha so clear paint casts no umbra
+                                        // (Renderer applies transmitted shadow as mix(1, color, a)).
+                                        const paintOpacitySample = texture( paintOpacityTexture, uv() ).r;
+                                        const causticRgb = causticProjection.mul( viewZ.mul( 25 ) ).add( viewZ )
+                                                .mul( baseColorUniform ).mul( causticStrengthUniform ).mul( causticTransmissionUniform );
+                                        return vec4( causticRgb, paintOpacitySample );
 
                                 } )();
 
@@ -783,6 +809,7 @@ import * as THREE from 'three/webgpu';
                                 const baseColorUniform = uniform( material.color );
                                 material.userData.baseColorUniform = baseColorUniform;
                                 applyPaintOverlay( material, baseColorUniform );
+                                applyOpaquePaintShadow( material );
                                 return material;
 
                         }
@@ -869,6 +896,8 @@ import * as THREE from 'three/webgpu';
                                 let ignoreWallColorPersist = false;
                                 let wallThickness = 0.25;
                                 let wallTransmission = 1;
+                                // Scales castShadowNode caustic brightness (glass only). 1 = full duck-style boost.
+                                let wallCausticStrength = 0.35;
                                 let lastInverseDiagnostics = null;
                                 // Canonical cut definition in cone-rig space. Flattening always uses these.
                                 // cutUp/cutDown are interval endpoints as % of the cone's extent along the cut
@@ -1100,6 +1129,7 @@ import * as THREE from 'three/webgpu';
                                 transformControls.addEventListener( 'dragging-changed', function ( event ) {
 
                                         controls.enabled = ! event.value;
+                                        if ( ! event.value ) scheduleAutosave();
 
                                 } );
                                 transformControls.addEventListener( 'objectChange', function () {
@@ -1402,7 +1432,8 @@ import * as THREE from 'three/webgpu';
 
                                 window.addEventListener( 'resize', requestRender );
                                 window.addEventListener( 'scroll', requestRender, { passive: true } );
-                                requestRender();
+                                // Defer first paint until after autosave restore — otherwise glass+ClipShadows
+                                // can compile transmitted shadow pipelines in a sticky bad state.
 
                                 scenes.forEach( updateStats );
                                 const gui = renderer.inspector.createParameters( 'Clipping settings' );
@@ -2463,6 +2494,7 @@ import * as THREE from 'three/webgpu';
                                                 a.wallBaseColor === b.wallBaseColor &&
                                                 a.thickness === b.thickness &&
                                                 a.transmission === b.transmission &&
+                                                a.causticStrength === b.causticStrength &&
                                                 a.coneAngle === b.coneAngle &&
                                                 a.scale === b.scale &&
                                                 a.cutAngle === b.cutAngle &&
@@ -2475,6 +2507,8 @@ import * as THREE from 'three/webgpu';
                                                 a.paintOpacity === b.paintOpacity &&
                                                 a.paintBrushSize === b.paintBrushSize &&
                                                 a.paintBrushSoftness === b.paintBrushSoftness &&
+                                                poseVectorsEqual( a.conePosition, b.conePosition ) &&
+                                                poseVectorsEqual( a.coneQuaternion, b.coneQuaternion ) &&
                                                 strokesEqual;
 
                                 }
@@ -2831,6 +2865,84 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function getConeRigPose() {
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group ) return null;
+
+                                        return {
+                                                position: [ group.position.x, group.position.y, group.position.z ],
+                                                quaternion: [ group.quaternion.x, group.quaternion.y, group.quaternion.z, group.quaternion.w ]
+                                        };
+
+                                }
+
+                                function applyConeRigPose( params ) {
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group || ! params ) return;
+
+                                        if ( Array.isArray( params.conePosition ) && params.conePosition.length === 3 ) {
+
+                                                const p = params.conePosition;
+                                                if ( Number.isFinite( p[ 0 ] ) && Number.isFinite( p[ 1 ] ) && Number.isFinite( p[ 2 ] ) ) {
+
+                                                        group.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
+
+                                                }
+
+                                        }
+
+                                        if ( Array.isArray( params.coneQuaternion ) && params.coneQuaternion.length === 4 ) {
+
+                                                const q = params.coneQuaternion;
+                                                if (
+                                                        Number.isFinite( q[ 0 ] ) && Number.isFinite( q[ 1 ] ) &&
+                                                        Number.isFinite( q[ 2 ] ) && Number.isFinite( q[ 3 ] )
+                                                ) {
+
+                                                        group.quaternion.set( q[ 0 ], q[ 1 ], q[ 2 ], q[ 3 ] ).normalize();
+
+                                                }
+
+                                        } else if ( Array.isArray( params.coneRotation ) && params.coneRotation.length === 3 ) {
+
+                                                const r = params.coneRotation;
+                                                if ( Number.isFinite( r[ 0 ] ) && Number.isFinite( r[ 1 ] ) && Number.isFinite( r[ 2 ] ) ) {
+
+                                                        group.rotation.set( r[ 0 ], r[ 1 ], r[ 2 ] );
+
+                                                }
+
+                                        }
+
+                                        group.updateMatrixWorld( true );
+                                        syncClippingPlanesToWorld();
+
+                                }
+
+                                function poseVectorsEqual( a, b, eps = 1e-6 ) {
+
+                                        if ( ! a && ! b ) return true;
+
+                                        const len = ( a && a.length ) || ( b && b.length ) || 0;
+                                        if ( ! len ) return true;
+                                        if ( ( a && a.length ) !== len && a ) return false;
+                                        if ( ( b && b.length ) !== len && b ) return false;
+
+                                        // Legacy saves omit pose → treat missing as identity defaults.
+                                        for ( let i = 0; i < len; i ++ ) {
+
+                                                const av = a ? a[ i ] : ( len === 4 && i === 3 ? 1 : 0 );
+                                                const bv = b ? b[ i ] : ( len === 4 && i === 3 ? 1 : 0 );
+                                                if ( Math.abs( av - bv ) > eps ) return false;
+
+                                        }
+
+                                        return true;
+
+                                }
+
                                 function getParams() {
 
                                         const params = {
@@ -2844,6 +2956,7 @@ import * as THREE from 'three/webgpu';
                                                 wallBaseColor: wallBaseColor,
                                                 thickness: wallThickness,
                                                 transmission: wallTransmission,
+                                                causticStrength: wallCausticStrength,
                                                 coneAngle: coneAngle,
                                                 scale: coneScale,
                                                 cutAngle: cutAngle,
@@ -2861,6 +2974,14 @@ import * as THREE from 'three/webgpu';
 
                                                 } ).filter( Boolean )
                                         };
+
+                                        const pose = getConeRigPose();
+                                        if ( pose ) {
+
+                                                params.conePosition = pose.position;
+                                                params.coneQuaternion = pose.quaternion;
+
+                                        }
 
                                         if ( isConicV2Enabled() && ! coneUsesParametricGeometry ) {
 
@@ -3407,6 +3528,21 @@ import * as THREE from 'three/webgpu';
 
                                         },
 
+                                        get causticStrength() {
+
+                                                return wallCausticStrength;
+
+                                        },
+
+                                        set causticStrength( v ) {
+
+                                                wallCausticStrength = v;
+                                                applyWallCausticStrength();
+                                                if ( isRestoring ) return;
+                                                scheduleAutosave();
+
+                                        },
+
                                         get 'coneAngle'() {
 
                                                 return coneAngle;
@@ -3632,6 +3768,7 @@ import * as THREE from 'three/webgpu';
                                 conicEditors.randomizeWallColor = folderMaterial.add( propsConic, 'RandomizeWallColor' ).name( 'randomize color' );
                                 conicEditors.thickness = folderMaterial.add( propsConic, 'thickness', 0, 5, 0.01 );
                                 conicEditors.transmission = folderMaterial.add( propsConic, 'transmission', 0, 1, 0.01 );
+                                conicEditors.causticStrength = folderMaterial.add( propsConic, 'causticStrength', 0, 1, 0.01 ).name( 'caustic' );
                                 updateWallColorEditorsVisibility();
                                 syncWallColorUnsetIndicator();
 
@@ -3693,6 +3830,7 @@ import * as THREE from 'three/webgpu';
                                         group.updateMatrixWorld( true );
                                         syncClippingPlanesToWorld();
                                         requestRender();
+                                        scheduleAutosave();
 
                                 }
 
@@ -4671,7 +4809,87 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function disposeWallMaterial( material ) {
+
+                                        if ( ! material ) return;
+                                        material.dispose();
+
+                                }
+
+                                function rebuildWallMaterials() {
+
+                                        const glassHex = wallBaseColor
+                                                || ( wallMaterials.glass && wallMaterials.glass.userData.baseColorHex )
+                                                || null;
+                                        const plainHex = wallBaseColor
+                                                || ( wallMaterials.plain && wallMaterials.plain.userData.baseColorHex )
+                                                || null;
+
+                                        disposeWallMaterial( wallMaterials.clay );
+                                        disposeWallMaterial( wallMaterials.glass );
+                                        disposeWallMaterial( wallMaterials.plain );
+
+                                        wallMaterials.clay = createClayMaterial();
+                                        wallMaterials.glass = createGlassMaterial( glassHex || undefined );
+                                        wallMaterials.plain = createPlainMaterial( plainHex || undefined );
+
+                                        applyWallThickness();
+                                        applyWallTransmission();
+                                        applyWallCausticStrength();
+
+                                }
+
+                                function resetSceneShadows() {
+
+                                        if ( ! renderer ) return;
+
+                                        // Keep transmitted on so clay/plain paint opacity can punch shadow
+                                        // alpha; recreate materials wipe caustic color between switches.
+                                        renderer.shadowMap.transmitted = true;
+                                        if ( renderer.contextNode ) renderer.contextNode.needsUpdate = true;
+
+                                        scenes.forEach( function ( scene ) {
+
+                                                scene.traverse( function ( object ) {
+
+                                                        if ( object.isLight && object.shadow ) {
+
+                                                                if ( object.shadow.map ) {
+
+                                                                        object.shadow.map.dispose();
+                                                                        object.shadow.map = null;
+
+                                                                }
+
+                                                                object.shadow.needsUpdate = true;
+
+                                                        }
+
+                                                        const mats = object.material;
+                                                        if ( ! mats ) return;
+
+                                                        if ( Array.isArray( mats ) ) {
+
+                                                                for ( let i = 0; i < mats.length; i ++ ) mats[ i ].needsUpdate = true;
+
+                                                        } else {
+
+                                                                mats.needsUpdate = true;
+
+                                                        }
+
+                                                } );
+
+                                        } );
+
+                                }
+
                                 function updateConeWallMaterial() {
+
+                                        // Recreate materials + clear shadow maps. Transmitted caustic pipelines
+                                        // stick on the shared shadow override; swap+invalidate alone is unreliable.
+                                        rebuildWallMaterials();
+                                        resetSceneShadows();
 
                                         const material = wallMaterials[ wallMaterial ] || wallMaterials.clay;
 
@@ -4681,7 +4899,32 @@ import * as THREE from 'three/webgpu';
                                                 if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = material;
 
                                         } );
-                                        requestRender();
+
+                                        if ( ! isRestoring && wallMaterial === 'glass' ) warmClippedGlassShadows();
+                                        else requestRender();
+
+                                }
+
+                                // WebGPU transmitted shadows: first pipeline built with ClippingGroup.clipShadows
+                                // + castShadowNode can fail to produce caustics. Building once without clipping,
+                                // then again with clipping, recovers. Cold-start autosave with ClipShadows=true
+                                // hits that path; loading ClipShadows=false then enabling it does not.
+                                function warmClippedGlassShadows() {
+
+                                        if ( ! rendererReady || wallMaterial !== 'glass' ) return;
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( ! group || ! group.clipShadows ) {
+
+                                                requestRender();
+                                                return;
+
+                                        }
+
+                                        group.clipShadows = false;
+                                        animate();
+                                        group.clipShadows = true;
+                                        animate();
 
                                 }
 
@@ -4711,18 +4954,27 @@ import * as THREE from 'three/webgpu';
 
                                 function updateWallColorEditorsVisibility() {
 
-                                        const show = wallMaterial === 'plain' || wallMaterial === 'glass';
+                                        const showColor = wallMaterial === 'plain' || wallMaterial === 'glass';
+                                        const showGlass = wallMaterial === 'glass';
+
                                         if ( conicEditors.wallColor ) {
 
-                                                if ( show ) conicEditors.wallColor.show();
+                                                if ( showColor ) conicEditors.wallColor.show();
                                                 else conicEditors.wallColor.hide();
 
                                         }
 
                                         if ( conicEditors.randomizeWallColor ) {
 
-                                                if ( show ) conicEditors.randomizeWallColor.show();
+                                                if ( showColor ) conicEditors.randomizeWallColor.show();
                                                 else conicEditors.randomizeWallColor.hide();
+
+                                        }
+
+                                        if ( conicEditors.causticStrength ) {
+
+                                                if ( showGlass ) conicEditors.causticStrength.show();
+                                                else conicEditors.causticStrength.hide();
 
                                         }
 
@@ -4760,7 +5012,22 @@ import * as THREE from 'three/webgpu';
 
                                 function applyWallTransmission() {
 
-                                        if ( wallMaterials.glass ) wallMaterials.glass.transmission = wallTransmission;
+                                        if ( wallMaterials.glass ) {
+
+                                                wallMaterials.glass.transmission = wallTransmission;
+                                                const u = wallMaterials.glass.userData.causticTransmission;
+                                                if ( u ) u.value = wallTransmission;
+
+                                        }
+
+                                        requestRender();
+
+                                }
+
+                                function applyWallCausticStrength() {
+
+                                        const u = wallMaterials.glass && wallMaterials.glass.userData.causticStrength;
+                                        if ( u ) u.value = wallCausticStrength;
                                         requestRender();
 
                                 }
@@ -5077,6 +5344,7 @@ import * as THREE from 'three/webgpu';
                                         updateWallColorEditorsVisibility();
                                         if ( conicEditors.thickness && params.thickness != null ) conicEditors.thickness.setValue( params.thickness );
                                         if ( conicEditors.transmission && params.transmission != null ) conicEditors.transmission.setValue( params.transmission );
+                                        if ( conicEditors.causticStrength && params.causticStrength != null ) conicEditors.causticStrength.setValue( params.causticStrength );
                                         if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( params.coneAngle );
                                         if ( conicEditors.scale ) conicEditors.scale.setValue( params.scale );
                                         if ( conicEditors.cutAngle ) conicEditors.cutAngle.setValue( params.cutAngle );
@@ -5178,6 +5446,13 @@ import * as THREE from 'three/webgpu';
 
                                                         wallTransmission = params.transmission;
                                                         applyWallTransmission();
+
+                                                }
+
+                                                if ( 'causticStrength' in params && params.causticStrength != null ) {
+
+                                                        wallCausticStrength = params.causticStrength;
+                                                        applyWallCausticStrength();
 
                                                 }
 
@@ -5296,6 +5571,8 @@ import * as THREE from 'three/webgpu';
                                                         keepPatternBuffer: restoredPatternMesh
                                                 } );
                                                 if ( wasLevelled ) levelCutPlanesToGround();
+                                                // Restore after any level/fit side-effects so the saved pose wins.
+                                                applyConeRigPose( params );
                                                 if ( sizeChanged ) ensureConeFitsInView();
                                                 syncConicEditors();
 
@@ -5307,6 +5584,7 @@ import * as THREE from 'three/webgpu';
                                                 paintStrokes = await resolvePaintStrokes( params );
                                                 rebuildPaintFromStrokes( paintStrokes );
                                                 syncPaintEditors();
+                                                warmClippedGlassShadows();
 
                                         } finally {
 
@@ -5350,6 +5628,7 @@ import * as THREE from 'three/webgpu';
 
                                 bootParamsLoading = false;
                                 endParamsLoading();
+                                requestRender();
 
                                 const folderPersist = gui.addFolder( 'Persistence' );
                                 const propsPersist = {
@@ -5424,8 +5703,10 @@ import * as THREE from 'three/webgpu';
                                                         wallBaseColor = null;
                                                         wallThickness = 0.25;
                                                         wallTransmission = 1;
+                                                        wallCausticStrength = 0.35;
                                                         applyWallThickness();
                                                         applyWallTransmission();
+                                                        applyWallCausticStrength();
                                                         propsConic.RandomizeWallColor();
                                                         updateConeWallMaterial();
                                                         updateWallColorEditorsVisibility();
@@ -6392,7 +6673,7 @@ import * as THREE from 'three/webgpu';
 
                                 function serializeConeParamsForSvg() {
 
-                                        return {
+                                        const payload = {
                                                 version: 1,
                                                 applyCuts: !!( knotClippingGroups[ 0 ] && knotClippingGroups[ 0 ].enabled ),
                                                 ClipShadows: !!( knotClippingGroups[ 0 ] && knotClippingGroups[ 0 ].clipShadows ),
@@ -6404,6 +6685,15 @@ import * as THREE from 'three/webgpu';
                                                 cutDownOffset: cutDownOffsetPct,
                                                 cutOffsetsInterval: true
                                         };
+                                        const pose = getConeRigPose();
+                                        if ( pose ) {
+
+                                                payload.conePosition = pose.position;
+                                                payload.coneQuaternion = pose.quaternion;
+
+                                        }
+
+                                        return payload;
 
                                 }
 
@@ -6451,7 +6741,7 @@ import * as THREE from 'three/webgpu';
                                         }
 
                                         // Rebuild parametrically from the embedded cone data (no mesh IDs in SVG).
-                                        return {
+                                        const params = {
                                                 applyCuts: !! raw.applyCuts,
                                                 ClipShadows: !! raw.ClipShadows,
                                                 coneAngle: coneAngleValue,
@@ -6465,6 +6755,24 @@ import * as THREE from 'three/webgpu';
                                                 coneUsesParametricGeometry: true,
                                                 paintStrokeIds: []
                                         };
+
+                                        if ( Array.isArray( raw.conePosition ) && raw.conePosition.length === 3 ) {
+
+                                                params.conePosition = raw.conePosition.map( Number );
+
+                                        }
+
+                                        if ( Array.isArray( raw.coneQuaternion ) && raw.coneQuaternion.length === 4 ) {
+
+                                                params.coneQuaternion = raw.coneQuaternion.map( Number );
+
+                                        } else if ( Array.isArray( raw.coneRotation ) && raw.coneRotation.length === 3 ) {
+
+                                                params.coneRotation = raw.coneRotation.map( Number );
+
+                                        }
+
+                                        return params;
 
                                 }
 
