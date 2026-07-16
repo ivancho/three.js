@@ -222,6 +222,10 @@
                                 cursor: pointer;
                         }
 
+                        .list-item > div:nth-child(1).flat-hover-paint {
+                                cursor: url( "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23f5f0e6' stroke='%23222' stroke-width='1.25' d='M15.2 4.8l4 4L9.2 18.8H5.2v-4L15.2 4.8z'/%3E%3Cpath fill='%23222' d='M15.2 4.8l4 4 1.4-1.4-4-4z'/%3E%3C/svg%3E" ) 5 20, crosshair;
+                        }
+
                         .list-item > div:nth-child(1).paint-cursor {
                                 cursor: none;
                         }
@@ -519,9 +523,10 @@
                                                 <p>Drag to rotate the camera · right-click drag to pan · scroll to zoom.</p>
                                                 <p>Use Move / Rotate below the view to edit the cone (clipping planes follow).
                                                         M toggles Move, R toggles Rotate. Click the same icon again or Esc to exit. L (or the Level button) places the cone on the ground using the opening that is closer to it.
+
                                                 </p>
-                                                <p>Paint (B) lets you brush colors onto the flattened pattern; the same UV paint map shows on the cone.
-                                                        Pick a color next to the brush; set opacity, size, and softness in the Paint section (lower opacity makes the cone wall see-through), hold Shift to erase. Esc exits Paint.
+                                                <p>Paint (B) — or click the flattened pattern — lets you brush colors onto it; the same UV paint map shows on the cone.
+                                                        The pointer becomes a brush while painting. Click the 3D cone or press Esc to exit paint mode. Pick a color next to the brush; set opacity, size, and softness in the Paint section (lower opacity paint makes the cone wall see-through), hold Shift to erase. 
                                                         Each stroke is saved (brush settings included) and can be undone with ⌘Z / Ctrl+Z one stroke at a time; strokes persist with autosave / named saves via IndexedDB.
                                                 </p>
                                                 <p>Autosave writes pending edits to local storage immediately (brush strokes go to IndexedDB)
@@ -531,7 +536,12 @@
                                                         Peeled redo tails (after a load and new edit) are kept in IndexedDB so undoing a branch-point edit can restore them. 
                                                         Save with a name to store a separate named history. 
                                                         Select a name and version to restore.</p>
-                                                <p>Download SVG of the unrolled pattern to print (includes cone params, paint raster, and brush strokes). Upload SVG restores cone params when present, then brush strokes onto the pattern, if present.</p>
+                                                <p>Download SVG of the unrolled pattern for external modifications, or printing the pattern on paper,
+                                                         or storage/backup and sharing. The SVG includes the cone params, paint raster, and all brush strokes. 
+                                                   The Upload SVG command's behavior changes depending on the content of the uploaded SVG. 
+                                                   1. If the SVG has cone params and brush strokes, it asks whether to restore the cone from the stored params, or keep the current cone shape. Then proceeds as in step 2.
+                                                   2. If the SVG contains only brush strokes, those will be applied onto the current pattern and cone, keeping the shape and completely replacing the current brush strokes, with no confirmation.
+                                                   3. If the SVG has only cone params, the cone will be updated to the stored params without confirmation, and the current paint will be applied onto the new cone.</p> 
                                         </span>
                                 </span>
                         </div>
@@ -553,13 +563,16 @@
 
 import * as THREE from 'three/webgpu';
                                 import {
-                                        abs, color, div, float, Fn, mix, mx_fractal_noise_float, mx_noise_float, mx_worley_noise_float,
-                                        normalView, positionLocal, positionView, positionViewDirection, refract,
-                                        smoothstep, texture, uniform, uv, vec2, vec3, vec4
+                                        abs, bumpMap, color, div, float, Fn, getParallaxCorrectNormal, mix,
+                                        mx_fractal_noise_float, mx_noise_float, mx_worley_noise_float,
+                                        normalView, pmremTexture, positionLocal, positionView, positionViewDirection,
+                                        reflectVector, refract, smoothstep, texture, uniform, uv, vec2, vec3, vec4
                                 } from 'three/tsl';
                                 import { Inspector } from 'three/addons/inspector/Inspector.js';
                                 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
                                 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+                                import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
+                                import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js';
                                 import { Earcut } from 'three/src/extras/Earcut.js';
 
                         let canvas, renderer;
@@ -633,6 +646,10 @@ import * as THREE from 'three/webgpu';
                                 } )();
 
                         }
+
+                        // Soft BPCEM lighting needs a stronger scale than the hard studio lights.
+                        // Must be initialized before init() — createClayMaterial() runs during init startup.
+                        const clayBumpScaleUniform = uniform( 0.08 );
 
                         init().catch( function ( error ) {
 
@@ -709,7 +726,7 @@ import * as THREE from 'three/webgpu';
                                 applyPaintOverlay( material, color( 0xb8957e ) );
                                 applyOpaquePaintShadow( material );
                                 material.roughnessNode = float( 0.95 ).add( grain.mul( 0.04 ) );
-                                material.normalNode = bumpNormal( height.mul( 0.08 ) );
+                                material.normalNode = bumpNormal( height.mul( clayBumpScaleUniform ) );
 
                                 return material;
 
@@ -872,6 +889,29 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function flushRender() {
+
+                                        // Draw now, then wait two frames so the canvas presents before
+                                        // dismissing the loading overlay.
+                                        return new Promise( function ( resolve ) {
+
+                                                if ( rendererReady ) {
+
+                                                        renderRequested = false;
+                                                        animate();
+
+                                                }
+
+                                                requestAnimationFrame( function () {
+
+                                                        requestAnimationFrame( resolve );
+
+                                                } );
+
+                                        } );
+
+                                }
+
                                 beginParamsLoading( 'Loading saved scene…' );
 
                                 const BASE_CONE_HEIGHT = 5;
@@ -890,9 +930,25 @@ import * as THREE from 'three/webgpu';
                                 // Azimuth of the cut tilt in ConeGeometry θ: 0 → +Z (seam), π/2 → +X (legacy default).
                                 let cutAzimuth = Math.PI / 2;
                                 let showGroundPlane = true;
-                                let autoZoom = false;
                                 let patternFirst = false;
                                 let coneUsesParametricGeometry = true;
+                                let sceneSetup = 'plain';
+                                const SCENE_SETUPS = [ 'plain', 'brick room' ];
+
+                                function normalizeSceneSetup( value ) {
+
+                                        if ( value === 'studio' ) return 'plain';
+                                        if ( value === 'bpcem' ) return 'brick room';
+                                        return SCENE_SETUPS.includes( value ) ? value : 'plain';
+
+                                }
+
+                                let bpcemLightIntensity = 5;
+                                let bpcemLightSize = 1;
+                                let bpcemLightBlue = '#9aaeff';
+                                let bpcemLightRed = '#f3aaaa';
+                                let bpcemShowHelpers = true;
+                                let bpcemCubeMapTimer = null;
                                 let wallMaterial = 'clay';
                                 const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
                                 // null = unset → plain/glass stay on their load-time random color until the user picks one.
@@ -1018,13 +1074,10 @@ import * as THREE from 'three/webgpu';
                                 const worldPlane1 = localPlane1.clone();
                                 const worldPlane2 = localPlane2.clone();
                                 const _fitPoint = new THREE.Vector3();
-                                const _fitDir = new THREE.Vector3();
                                 const _levelNormal = new THREE.Vector3();
                                 const _levelTarget = new THREE.Vector3();
                                 const _levelUp = new THREE.Vector3( 0, 1, 0 );
                                 const _levelQuat = new THREE.Quaternion();
-                                const AUTO_ZOOM_TRIGGER = 1.08; // only zoom out once clearly past the view edge
-                                const AUTO_ZOOM_FILL = 0.98; // settle near the edges — avoid jumping far back
                                 const APEX_EPS = 1e-10;
                                 const objectMaterials = [];
                                 const groundMaterials = [];
@@ -1291,6 +1344,11 @@ import * as THREE from 'three/webgpu';
                                 flattenedMesh.position.set( 8, - 4.9, 0 );
                                 scene.add( flattenedMesh );
                                 scene.userData.flattenedMesh = flattenedMesh;
+                                scene.userData.paintOutline = null;
+
+                                const studioRoot = new THREE.Group();
+                                studioRoot.name = 'studioSetup';
+                                scene.add( studioRoot );
 
                                 const ground = new THREE.Mesh(
                                         new THREE.PlaneGeometry( 40, 40, 40, 40 ),
@@ -1301,20 +1359,22 @@ import * as THREE from 'three/webgpu';
                                 ground.position.set( 4, - 5, 0 );
                                 ground.receiveShadow = true;
                                 ground.visible = showGroundPlane;
-                                scene.add( ground );
+                                studioRoot.add( ground );
 
                                 const grid = new THREE.GridHelper( 40, 40, 0xcccccc, 0xaaaaaa );
                                 grid.position.set( 4, - 5, 0 );
                                 grid.material.opacity = 0.75;
                                 grid.material.transparent = true;
                                 grid.visible = showGroundPlane;
-                                scene.add( grid );
+                                studioRoot.add( grid );
 
                                 scene.userData.ground = ground;
+                                scene.userData.studioGround = ground;
                                 scene.userData.grid = grid;
+                                scene.userData.studioRoot = studioRoot;
                                 groundMaterials.push( ground.material );
 
-                                scene.add( new THREE.AmbientLight( 0xcccccc, 0.7 ) );
+                                studioRoot.add( new THREE.AmbientLight( 0xcccccc, 0.7 ) );
 
                                 // Ground is centered at x=4 and spans 40×40; keep lights / shadow
                                 // frustums centered there so caustics don't drop out on one side.
@@ -1341,8 +1401,8 @@ import * as THREE from 'three/webgpu';
                                 spotLight.shadow.mapSize.width = 2048;
                                 spotLight.shadow.mapSize.height = 2048;
                                 spotLight.shadow.radius = 4;
-                                scene.add( spotLight );
-                                scene.add( spotLight.target );
+                                studioRoot.add( spotLight );
+                                studioRoot.add( spotLight.target );
 
                                 const dirLight = new THREE.DirectionalLight( 0xffffff, 2.5 );
                                 dirLight.position.set( groundCenter.x + 4, 8 + lightRaise, groundCenter.z + 5 );
@@ -1358,8 +1418,8 @@ import * as THREE from 'three/webgpu';
                                 dirLight.shadow.camera.updateProjectionMatrix();
                                 dirLight.shadow.mapSize.width = 2048;
                                 dirLight.shadow.mapSize.height = 2048;
-                                scene.add( dirLight );
-                                scene.add( dirLight.target );
+                                studioRoot.add( dirLight );
+                                studioRoot.add( dirLight.target );
 
                                 const lightAbove = new THREE.PointLight( 0xffffff, 50 );
                                 lightAbove.position.set( groundCenter.x + 3, 10 + lightRaise, groundCenter.z + 4 );
@@ -1370,7 +1430,7 @@ import * as THREE from 'three/webgpu';
                                 lightAbove.shadow.mapSize.height = 1024;
                                 lightAbove.shadow.camera.near = 0.5;
                                 lightAbove.shadow.camera.far = lightAbove.distance;
-                                scene.add( lightAbove );
+                                studioRoot.add( lightAbove );
 
                                 const lightAboveFill = new THREE.PointLight( 0xfff2e0, 30 );
                                 lightAboveFill.position.set( groundCenter.x - 4, 8 + lightRaise, groundCenter.z - 3 );
@@ -1381,7 +1441,7 @@ import * as THREE from 'three/webgpu';
                                 lightAboveFill.shadow.mapSize.height = 512;
                                 lightAboveFill.shadow.camera.near = 0.5;
                                 lightAboveFill.shadow.camera.far = lightAboveFill.distance;
-                                scene.add( lightAboveFill );
+                                studioRoot.add( lightAboveFill );
 
                                 const lightBelow = new THREE.PointLight( 0xffffff, 40 );
                                 lightBelow.position.set( groundCenter.x - 2, - 8 + lightRaise, groundCenter.z + 3 );
@@ -1392,7 +1452,7 @@ import * as THREE from 'three/webgpu';
                                 lightBelow.shadow.mapSize.height = 1024;
                                 lightBelow.shadow.camera.near = 0.5;
                                 lightBelow.shadow.camera.far = lightBelow.distance;
-                                scene.add( lightBelow );
+                                studioRoot.add( lightBelow );
 
                                 const lightBelowFill = new THREE.PointLight( 0xe0f0ff, 25 );
                                 lightBelowFill.position.set( groundCenter.x + 4, - 6 + lightRaise, groundCenter.z - 4 );
@@ -1403,7 +1463,7 @@ import * as THREE from 'three/webgpu';
                                 lightBelowFill.shadow.mapSize.height = 512;
                                 lightBelowFill.shadow.camera.near = 0.5;
                                 lightBelowFill.shadow.camera.far = lightBelowFill.distance;
-                                scene.add( lightBelowFill );
+                                studioRoot.add( lightBelowFill );
 
                                 const dirLightBelow = new THREE.DirectionalLight( 0x888888, 1.5 );
                                 dirLightBelow.position.set( groundCenter.x, - 10 + lightRaise, groundCenter.z + 2 );
@@ -1419,8 +1479,14 @@ import * as THREE from 'three/webgpu';
                                 dirLightBelow.shadow.camera.updateProjectionMatrix();
                                 dirLightBelow.shadow.mapSize.width = 2048;
                                 dirLightBelow.shadow.mapSize.height = 2048;
-                                scene.add( dirLightBelow );
-                                scene.add( dirLightBelow.target );
+                                studioRoot.add( dirLightBelow );
+                                studioRoot.add( dirLightBelow.target );
+
+                                const bpcemRoot = new THREE.Group();
+                                bpcemRoot.name = 'bpcemSetup';
+                                bpcemRoot.visible = false;
+                                scene.add( bpcemRoot );
+                                scene.userData.bpcemRoot = bpcemRoot;
 
                                 scenes.push( scene );
 
@@ -1433,6 +1499,8 @@ import * as THREE from 'three/webgpu';
 
                                 await renderer.init();
                                 rendererReady = true;
+
+                                await setupBpcemEnvironment( scene );
 
                                 window.addEventListener( 'resize', requestRender );
                                 window.addEventListener( 'scroll', requestRender, { passive: true } );
@@ -2491,7 +2559,12 @@ import * as THREE from 'three/webgpu';
                                         return a.applyCuts === b.applyCuts &&
                                                 a.ClipShadows === b.ClipShadows &&
                                                 a.showGroundPlane === b.showGroundPlane &&
-                                                a.autoZoom === b.autoZoom &&
+                                                a.sceneSetup === b.sceneSetup &&
+                                                a.bpcemLightIntensity === b.bpcemLightIntensity &&
+                                                a.bpcemLightSize === b.bpcemLightSize &&
+                                                a.bpcemLightBlue === b.bpcemLightBlue &&
+                                                a.bpcemLightRed === b.bpcemLightRed &&
+                                                a.bpcemShowHelpers === b.bpcemShowHelpers &&
                                                 a.patternFirst === b.patternFirst &&
                                                 a.coneUsesParametricGeometry === b.coneUsesParametricGeometry &&
                                                 a.wallMaterial === b.wallMaterial &&
@@ -2953,7 +3026,12 @@ import * as THREE from 'three/webgpu';
                                                 applyCuts: knotClippingGroups[ 0 ].enabled,
                                                 ClipShadows: knotClippingGroups[ 0 ].clipShadows,
                                                 showGroundPlane: showGroundPlane,
-                                                autoZoom: autoZoom,
+                                                sceneSetup: sceneSetup,
+                                                bpcemLightIntensity: bpcemLightIntensity,
+                                                bpcemLightSize: bpcemLightSize,
+                                                bpcemLightBlue: bpcemLightBlue,
+                                                bpcemLightRed: bpcemLightRed,
+                                                bpcemShowHelpers: bpcemShowHelpers,
                                                 patternFirst: isConicV2Enabled() ? patternFirst : false,
                                                 coneUsesParametricGeometry: isConicV2Enabled() ? coneUsesParametricGeometry : true,
                                                 wallMaterial: wallMaterial,
@@ -3429,17 +3507,122 @@ import * as THREE from 'three/webgpu';
 
                                         },
 
-                                        get autoZoom() {
+                                        get sceneSetup() {
 
-                                                return autoZoom;
+                                                return sceneSetup;
 
                                         },
 
-                                        set autoZoom( v ) {
+                                        set sceneSetup( v ) {
 
-                                                autoZoom = v;
-                                                if ( autoZoom ) ensureConeFitsInView();
-                                                scheduleAutosave();
+                                                sceneSetup = normalizeSceneSetup( v );
+                                                applySceneSetup();
+
+                                        },
+
+                                        get bpcemBoxProjected() {
+
+                                                const scene = scenes[ 0 ];
+                                                const floor = scene && scene.userData.bpcemFloor;
+                                                const mats = scene && scene.userData.bpcemFloorMats;
+                                                if ( ! floor || ! mats ) return true;
+                                                return floor.material === mats.boxProjected;
+
+                                        },
+
+                                        set bpcemBoxProjected( v ) {
+
+                                                const scene = scenes[ 0 ];
+                                                const floor = scene && scene.userData.bpcemFloor;
+                                                const mats = scene && scene.userData.bpcemFloorMats;
+                                                if ( ! floor || ! mats ) return;
+                                                floor.material = v ? mats.boxProjected : mats.default;
+                                                requestRender();
+
+                                        },
+
+                                        get bpcemRoughness() {
+
+                                                const u = scenes[ 0 ] && scenes[ 0 ].userData.bpcemRoughnessUniform;
+                                                return u ? u.value : 0.25;
+
+                                        },
+
+                                        set bpcemRoughness( v ) {
+
+                                                const u = scenes[ 0 ] && scenes[ 0 ].userData.bpcemRoughnessUniform;
+                                                if ( u ) u.value = v;
+                                                requestRender();
+
+                                        },
+
+                                        get bpcemLightIntensity() {
+
+                                                return bpcemLightIntensity;
+
+                                        },
+
+                                        set bpcemLightIntensity( v ) {
+
+                                                bpcemLightIntensity = v;
+                                                applyBpcemLighting();
+                                                if ( ! isRestoring ) scheduleAutosave();
+
+                                        },
+
+                                        get bpcemLightSize() {
+
+                                                return bpcemLightSize;
+
+                                        },
+
+                                        set bpcemLightSize( v ) {
+
+                                                bpcemLightSize = v;
+                                                applyBpcemLighting();
+                                                if ( ! isRestoring ) scheduleAutosave();
+
+                                        },
+
+                                        get bpcemLightBlue() {
+
+                                                return bpcemLightBlue;
+
+                                        },
+
+                                        set bpcemLightBlue( v ) {
+
+                                                bpcemLightBlue = paintColorToCssHex( v );
+                                                applyBpcemLighting();
+                                                if ( ! isRestoring ) scheduleAutosave();
+
+                                        },
+
+                                        get bpcemLightRed() {
+
+                                                return bpcemLightRed;
+
+                                        },
+
+                                        set bpcemLightRed( v ) {
+
+                                                bpcemLightRed = paintColorToCssHex( v );
+                                                applyBpcemLighting();
+                                                if ( ! isRestoring ) scheduleAutosave();
+
+                                        },
+
+                                        get bpcemShowHelpers() {
+
+                                                return bpcemShowHelpers;
+
+                                        },
+
+                                        set bpcemShowHelpers( v ) {
+
+                                                bpcemShowHelpers = !! v;
+                                                applyBpcemLighting( { skipCubeMap: true } );
+                                                if ( ! isRestoring ) scheduleAutosave();
 
                                         },
 
@@ -3558,7 +3741,6 @@ import * as THREE from 'three/webgpu';
                                                 coneAngle = v;
                                                 if ( isRestoring ) return;
                                                 updateGeometries( patternFirst ? {} : { editCone: true } );
-                                                ensureConeFitsInView();
                                                 scheduleAutosave();
 
                                         },
@@ -3584,7 +3766,6 @@ import * as THREE from 'three/webgpu';
 
                                                 } );
                                                 updateGeometries( patternFirst ? {} : { editCone: true } );
-                                                ensureConeFitsInView();
                                                 scheduleAutosave();
 
                                         },
@@ -3695,7 +3876,6 @@ import * as THREE from 'three/webgpu';
 
                                                 // Keep the current flat pattern; fit and lift the unique matching cone.
                                                 updateGeometries();
-                                                if ( autoZoom ) ensureConeFitsInView();
 
                                         }
 
@@ -3764,8 +3944,16 @@ import * as THREE from 'three/webgpu';
                                 updateConicEditorsMode();
 
                                 conicEditors.ClipShadows = folderScene.add( propsConic, 'ClipShadows' );
+                                conicEditors.sceneSetup = folderScene.add( propsConic, 'sceneSetup', SCENE_SETUPS ).name( 'scene' );
                                 conicEditors.showGroundPlane = folderScene.add( propsConic, 'showGroundPlane' );
-                                conicEditors.autoZoom = folderScene.add( propsConic, 'autoZoom' );
+                                conicEditors.bpcemBoxProjected = folderScene.add( propsConic, 'bpcemBoxProjected' ).name( 'box projected' );
+                                conicEditors.bpcemRoughness = folderScene.add( propsConic, 'bpcemRoughness', 0, 1 ).name( 'floor roughness' );
+                                conicEditors.bpcemLightIntensity = folderScene.add( propsConic, 'bpcemLightIntensity', 0, 200 ).step( 0.1 ).name( 'light intensity' );
+                                conicEditors.bpcemLightSize = folderScene.add( propsConic, 'bpcemLightSize', 0.25, 2 ).step( 0.05 ).name( 'light size' );
+                                conicEditors.bpcemLightBlue = folderScene.addColor( propsConic, 'bpcemLightBlue' ).name( 'left light' );
+                                conicEditors.bpcemLightRed = folderScene.addColor( propsConic, 'bpcemLightRed' ).name( 'right light' );
+                                conicEditors.bpcemShowHelpers = folderScene.add( propsConic, 'bpcemShowHelpers' ).name( 'light helpers' );
+                                updateSceneSetupEditorsVisibility();
 
                                 conicEditors.wallMaterial = folderMaterial.add( propsConic, 'wallMaterial', WALL_MATERIALS );
                                 conicEditors.wallColor = folderMaterial.addColor( propsConic, 'wallColor' ).name( 'color (auto)' );
@@ -3877,6 +4065,7 @@ import * as THREE from 'three/webgpu';
                                         if ( scene && scene.userData.element ) {
 
                                                 scene.userData.element.classList.toggle( 'paint-cursor', paintMode );
+                                                if ( paintMode ) scene.userData.element.classList.remove( 'flat-hover-paint' );
 
                                         }
 
@@ -3890,7 +4079,93 @@ import * as THREE from 'three/webgpu';
 
                                         }
 
+                                        updatePaintOutlineVisibility();
                                         requestRender();
+
+                                }
+
+                                function disposePaintOutline( scene ) {
+
+                                        const outline = scene && scene.userData.paintOutline;
+                                        if ( ! outline ) return;
+
+                                        if ( outline.parent ) outline.parent.remove( outline );
+                                        outline.traverse( function ( object ) {
+
+                                                if ( object.geometry ) object.geometry.dispose();
+                                                if ( object.material ) {
+
+                                                        if ( Array.isArray( object.material ) ) {
+
+                                                                for ( let i = 0; i < object.material.length; i ++ ) object.material[ i ].dispose();
+
+                                                        } else {
+
+                                                                object.material.dispose();
+
+                                                        }
+
+                                                }
+
+                                        } );
+                                        scene.userData.paintOutline = null;
+
+                                }
+
+                                function rebuildPaintOutline() {
+
+                                        const scene = scenes[ 0 ];
+                                        const flatMesh = scene && scene.userData.flattenedMesh;
+                                        if ( ! scene || ! flatMesh || ! flatMesh.geometry ) return;
+
+                                        disposePaintOutline( scene );
+
+                                        const edges = new THREE.EdgesGeometry( flatMesh.geometry, 1 );
+                                        const outline = new THREE.Group();
+                                        outline.name = 'paintOutline';
+                                        // Slight lift in local Y so the lines sit above the pattern plane.
+                                        outline.position.y = 0.015;
+                                        outline.renderOrder = 10;
+
+                                        const glow = new THREE.LineSegments( edges, new THREE.LineBasicMaterial( {
+                                                color: 0x9ec9e8,
+                                                transparent: true,
+                                                opacity: 0.18,
+                                                depthWrite: false,
+                                                depthTest: true,
+                                                blending: THREE.AdditiveBlending
+                                        } ) );
+                                        glow.renderOrder = 10;
+                                        outline.add( glow );
+
+                                        const core = new THREE.LineSegments( edges.clone(), new THREE.LineBasicMaterial( {
+                                                color: 0xc5dbe8,
+                                                transparent: true,
+                                                opacity: 0.4,
+                                                depthWrite: false,
+                                                depthTest: true
+                                        } ) );
+                                        core.renderOrder = 11;
+                                        outline.add( core );
+
+                                        outline.visible = paintMode;
+                                        flatMesh.add( outline );
+                                        scene.userData.paintOutline = outline;
+
+                                }
+
+                                function updatePaintOutlineVisibility() {
+
+                                        const scene = scenes[ 0 ];
+                                        const outline = scene && scene.userData.paintOutline;
+                                        if ( ! outline ) {
+
+                                                if ( paintMode ) rebuildPaintOutline();
+                                                return;
+
+                                        }
+
+                                        outline.visible = paintMode;
 
                                 }
 
@@ -4305,14 +4580,13 @@ import * as THREE from 'three/webgpu';
 
                                 function tryHandleConeViewClick( event ) {
 
-                                        if ( paintMode ) return;
-
                                         const scene = scenes[ 0 ];
                                         if ( ! scene ) return;
 
                                         const element = scene.userData.element;
                                         const camera = scene.userData.camera;
                                         const coneMesh = scene.userData.coneMesh;
+                                        const flatMesh = scene.userData.flattenedMesh;
                                         const ground = scene.userData.ground;
                                         if ( ! element || ! camera || ! coneMesh ) return;
 
@@ -4324,6 +4598,38 @@ import * as THREE from 'three/webgpu';
                                         conePointerNdc.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1;
                                         conePointerNdc.y = - ( ( event.clientY - rect.top ) / rect.height ) * 2 + 1;
                                         coneRaycaster.setFromCamera( conePointerNdc, camera );
+
+                                        if ( paintMode ) {
+
+                                                const coneHits = coneRaycaster.intersectObject( coneMesh, false );
+                                                for ( let i = 0; i < coneHits.length; i ++ ) {
+
+                                                        if ( isPointOnVisibleCone( coneHits[ i ].point ) ) {
+
+                                                                // setTransformMode clears paint mode.
+                                                                setTransformMode( 'translate' );
+                                                                return;
+
+                                                        }
+
+                                                }
+
+                                                return;
+
+                                        }
+
+                                        if ( flatMesh ) {
+
+                                                const flatHits = coneRaycaster.intersectObject( flatMesh, false );
+                                                if ( flatHits.length ) {
+
+                                                        setPaintMode( true );
+                                                        updatePaintBrushCursorAt( event.clientX, event.clientY );
+                                                        return;
+
+                                                }
+
+                                        }
 
                                         const targets = [ coneMesh ];
                                         if ( ground && ground.visible ) targets.push( ground );
@@ -4516,15 +4822,39 @@ import * as THREE from 'three/webgpu';
 
                                                         if ( paintMode ) {
 
+                                                                coneElement.classList.remove( 'flat-hover-paint' );
                                                                 updatePaintBrushCursorAt( event.clientX, event.clientY );
+                                                                return;
 
                                                         }
+
+                                                        const scene = scenes[ 0 ];
+                                                        const camera = scene && scene.userData.camera;
+                                                        const flatMesh = scene && scene.userData.flattenedMesh;
+                                                        let onFlat = false;
+
+                                                        if ( camera && flatMesh ) {
+
+                                                                const rect = coneElement.getBoundingClientRect();
+                                                                if ( rect.width > 0 && rect.height > 0 ) {
+
+                                                                        paintPointerNdc.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1;
+                                                                        paintPointerNdc.y = - ( ( event.clientY - rect.top ) / rect.height ) * 2 + 1;
+                                                                        paintRaycaster.setFromCamera( paintPointerNdc, camera );
+                                                                        onFlat = paintRaycaster.intersectObject( flatMesh, false ).length > 0;
+
+                                                                }
+
+                                                        }
+
+                                                        coneElement.classList.toggle( 'flat-hover-paint', onFlat );
 
                                                 } );
 
                                                 coneElement.addEventListener( 'pointerleave', function () {
 
                                                         hidePaintBrushCursor();
+                                                        coneElement.classList.remove( 'flat-hover-paint' );
 
                                                 } );
 
@@ -4805,10 +5135,356 @@ import * as THREE from 'three/webgpu';
 
                                         scenes.forEach( function ( scene ) {
 
-                                                if ( scene.userData.ground ) scene.userData.ground.visible = showGroundPlane;
+                                                if ( sceneSetup !== 'plain' ) return;
+                                                if ( scene.userData.studioGround ) scene.userData.studioGround.visible = showGroundPlane;
                                                 if ( scene.userData.grid ) scene.userData.grid.visible = showGroundPlane;
 
                                         } );
+                                        requestRender();
+
+                                }
+
+                                function updateSceneSetupEditorsVisibility() {
+
+                                        const isPlain = sceneSetup === 'plain';
+                                        const isBrickRoom = sceneSetup === 'brick room';
+
+                                        if ( conicEditors.showGroundPlane ) {
+
+                                                if ( isPlain ) conicEditors.showGroundPlane.show();
+                                                else conicEditors.showGroundPlane.hide();
+
+                                        }
+
+                                        if ( conicEditors.bpcemBoxProjected ) {
+
+                                                if ( isBrickRoom ) conicEditors.bpcemBoxProjected.show();
+                                                else conicEditors.bpcemBoxProjected.hide();
+
+                                        }
+
+                                        if ( conicEditors.bpcemRoughness ) {
+
+                                                if ( isBrickRoom ) conicEditors.bpcemRoughness.show();
+                                                else conicEditors.bpcemRoughness.hide();
+
+                                        }
+
+                                        const bpcemLightEditors = [
+                                                conicEditors.bpcemLightIntensity,
+                                                conicEditors.bpcemLightSize,
+                                                conicEditors.bpcemLightBlue,
+                                                conicEditors.bpcemLightRed,
+                                                conicEditors.bpcemShowHelpers
+                                        ];
+
+                                        for ( let i = 0; i < bpcemLightEditors.length; i ++ ) {
+
+                                                const editor = bpcemLightEditors[ i ];
+                                                if ( ! editor ) continue;
+                                                if ( isBrickRoom ) editor.show();
+                                                else editor.hide();
+
+                                        }
+
+                                }
+
+                                function scheduleBpcemCubeMapUpdate() {
+
+                                        clearTimeout( bpcemCubeMapTimer );
+                                        bpcemCubeMapTimer = setTimeout( function () {
+
+                                                const scene = scenes[ 0 ];
+                                                if ( ! scene || sceneSetup !== 'brick room' || ! scene.userData.bpcemRoot ) return;
+
+                                                const root = scene.userData.bpcemRoot;
+                                                const wasVisible = root.visible;
+                                                root.visible = true;
+                                                updateBpcemCubeMap( scene );
+                                                root.visible = wasVisible;
+                                                requestRender();
+
+                                        }, 120 );
+
+                                }
+
+                                function applyBpcemLighting( options = {} ) {
+
+                                        const scene = scenes[ 0 ];
+                                        if ( ! scene ) return;
+
+                                        const blue = scene.userData.bpcemBlueLight;
+                                        const red = scene.userData.bpcemRedLight;
+                                        const blueHelper = scene.userData.bpcemBlueHelper;
+                                        const redHelper = scene.userData.bpcemRedHelper;
+                                        const defaultSize = scene.userData.bpcemDefaultLightSize || 10;
+                                        const size = Math.max( 0.1, defaultSize * bpcemLightSize );
+
+                                        if ( blue ) {
+
+                                                blue.intensity = bpcemLightIntensity;
+                                                blue.color.set( bpcemLightBlue );
+                                                blue.width = size;
+                                                blue.height = size;
+
+                                        }
+
+                                        if ( red ) {
+
+                                                red.intensity = bpcemLightIntensity;
+                                                red.color.set( bpcemLightRed );
+                                                red.width = size;
+                                                red.height = size;
+
+                                        }
+
+                                        if ( blueHelper ) blueHelper.visible = bpcemShowHelpers;
+                                        if ( redHelper ) redHelper.visible = bpcemShowHelpers;
+
+                                        if ( ! options.skipCubeMap ) scheduleBpcemCubeMapUpdate();
+                                        requestRender();
+
+                                }
+
+                                function updateBpcemCubeMap( scene ) {
+
+                                        if ( ! rendererReady || ! scene || ! scene.userData.bpcemCubeCamera ) return;
+
+                                        const cubeCamera = scene.userData.bpcemCubeCamera;
+                                        const floor = scene.userData.bpcemFloor;
+                                        const studioRoot = scene.userData.studioRoot;
+                                        const coneMesh = scene.userData.coneMesh;
+                                        const flatMesh = scene.userData.flattenedMesh;
+                                        const transformHelper = coneTransformControls && coneTransformControls.getHelper();
+                                        const blueHelper = scene.userData.bpcemBlueHelper;
+                                        const redHelper = scene.userData.bpcemRedHelper;
+
+                                        const prevStudio = studioRoot ? studioRoot.visible : false;
+                                        const prevCone = coneMesh ? coneMesh.visible : true;
+                                        const prevFlat = flatMesh ? flatMesh.visible : true;
+                                        const prevHelper = transformHelper ? transformHelper.visible : false;
+                                        const prevBlueHelper = blueHelper ? blueHelper.visible : false;
+                                        const prevRedHelper = redHelper ? redHelper.visible : false;
+                                        const prevEnv = scene.environmentNode;
+                                        const prevBackground = scene.backgroundNode;
+                                        const prevClear = new THREE.Color();
+                                        const prevClearAlpha = renderer.getClearAlpha();
+                                        renderer.getClearColor( prevClear );
+
+                                        // Never sample the cubemap while rewriting it.
+                                        scene.environmentNode = null;
+                                        scene.backgroundNode = null;
+                                        // Room has no ceiling; open cube faces must not clear to the studio white
+                                        // or a roughness-0 floor mirrors a blown-out white void on first switch.
+                                        renderer.setClearColor( 0x101010, 1 );
+
+                                        if ( studioRoot ) studioRoot.visible = false;
+                                        if ( floor ) floor.visible = false;
+                                        if ( coneMesh ) coneMesh.visible = false;
+                                        if ( flatMesh ) flatMesh.visible = false;
+                                        if ( transformHelper ) transformHelper.visible = false;
+                                        if ( blueHelper ) blueHelper.visible = false;
+                                        if ( redHelper ) redHelper.visible = false;
+
+                                        if ( floor ) cubeCamera.position.copy( floor.position );
+                                        cubeCamera.update( renderer, scene );
+
+                                        renderer.setClearColor( prevClear, prevClearAlpha );
+                                        scene.environmentNode = prevEnv;
+                                        scene.backgroundNode = prevBackground;
+                                        if ( studioRoot ) studioRoot.visible = prevStudio;
+                                        if ( floor ) floor.visible = true;
+                                        if ( coneMesh ) coneMesh.visible = prevCone;
+                                        if ( flatMesh ) flatMesh.visible = prevFlat;
+                                        if ( transformHelper ) transformHelper.visible = prevHelper;
+                                        if ( blueHelper ) blueHelper.visible = prevBlueHelper;
+                                        if ( redHelper ) redHelper.visible = prevRedHelper;
+
+                                }
+
+                                async function setupBpcemEnvironment( scene ) {
+
+                                        // Scaled adaptation of webgpu_materials_envmaps_bpcem.html around the cone workspace.
+                                        THREE.RectAreaLightNode.setLTC( RectAreaLightTexturesLib.init() );
+
+                                        const bpcemRoot = scene.userData.bpcemRoot;
+                                        if ( ! bpcemRoot ) return;
+
+                                        const roomSize = new THREE.Vector3( 160, 40, 80 );
+                                        const floorY = - 5;
+                                        const roomCenter = new THREE.Vector3( 4, floorY + roomSize.y * 0.5, 0 );
+
+                                        const renderTarget = new THREE.CubeRenderTarget( 512 );
+                                        renderTarget.texture.type = THREE.HalfFloatType;
+                                        renderTarget.texture.minFilter = THREE.LinearMipmapLinearFilter;
+                                        renderTarget.texture.magFilter = THREE.LinearFilter;
+                                        renderTarget.texture.generateMipmaps = true;
+                                        renderTarget.texture.mapping = THREE.CubeReflectionMapping;
+
+                                        const cubeCamera = new THREE.CubeCamera( 0.5, 200, renderTarget );
+                                        cubeCamera.position.set( roomCenter.x, floorY, roomCenter.z );
+                                        scene.userData.bpcemCubeCamera = cubeCamera;
+                                        scene.userData.bpcemRenderTarget = renderTarget;
+
+                                        const loader = new THREE.TextureLoader();
+                                        const rMap = loader.load( './textures/lava/lavatile.jpg' );
+                                        rMap.wrapS = THREE.RepeatWrapping;
+                                        rMap.wrapT = THREE.RepeatWrapping;
+                                        rMap.repeat.set( 2, 1 );
+
+                                        const roughnessUniform = uniform( 0.25 );
+                                        scene.userData.bpcemRoughnessUniform = roughnessUniform;
+
+                                        const envTextureNode = pmremTexture( renderTarget.texture );
+                                        const boxProjectedEnv = pmremTexture(
+                                                renderTarget.texture,
+                                                getParallaxCorrectNormal(
+                                                        reflectVector,
+                                                        vec3( roomSize.x, roomSize.y, roomSize.z ),
+                                                        vec3( roomCenter.x, roomCenter.y, roomCenter.z )
+                                                )
+                                        );
+
+                                        const defaultMat = new THREE.MeshStandardNodeMaterial();
+                                        defaultMat.envNode = envTextureNode;
+                                        defaultMat.roughnessNode = texture( rMap ).mul( roughnessUniform );
+                                        defaultMat.metalnessNode = float( 1 );
+
+                                        const boxProjectedMat = new THREE.MeshStandardNodeMaterial();
+                                        boxProjectedMat.envNode = boxProjectedEnv;
+                                        boxProjectedMat.roughnessNode = texture( rMap ).mul( roughnessUniform );
+                                        boxProjectedMat.metalnessNode = float( 1 );
+
+                                        const floor = new THREE.Mesh(
+                                                new THREE.PlaneGeometry( roomSize.x, roomSize.z, 64, 32 ),
+                                                boxProjectedMat
+                                        );
+                                        floor.rotation.x = - Math.PI / 2;
+                                        floor.position.set( roomCenter.x, floorY, roomCenter.z );
+                                        floor.receiveShadow = true;
+                                        bpcemRoot.add( floor );
+                                        scene.userData.bpcemFloor = floor;
+                                        scene.userData.bpcemFloorMats = { boxProjected: boxProjectedMat, default: defaultMat };
+
+                                        const [ diffuseTex, bumpTex ] = await Promise.all( [
+                                                loader.loadAsync( './textures/brick_diffuse.jpg' ),
+                                                loader.loadAsync( './textures/brick_bump.jpg' )
+                                        ] );
+                                        diffuseTex.colorSpace = THREE.SRGBColorSpace;
+
+                                        const wallMat = new THREE.MeshStandardNodeMaterial();
+                                        wallMat.colorNode = texture( diffuseTex );
+                                        wallMat.normalNode = bumpMap( texture( bumpTex ), float( 5 ) );
+
+                                        const wallW = roomSize.x * 0.5;
+                                        const wallD = roomSize.z * 0.5;
+                                        const planeLong = new THREE.PlaneGeometry( wallW, roomSize.y );
+                                        const planeSide = new THREE.PlaneGeometry( roomSize.z, roomSize.y );
+
+                                        function addWall( geometry, x, z, rotY ) {
+
+                                                const wall = new THREE.Mesh( geometry, wallMat );
+                                                wall.position.set( x, roomCenter.y, z );
+                                                wall.rotation.y = rotY;
+                                                bpcemRoot.add( wall );
+
+                                        }
+
+                                        // Two panels per long wall (matching the reference layout).
+                                        addWall( planeLong, roomCenter.x - wallW * 0.5, roomCenter.z - wallD, 0 );
+                                        addWall( planeLong, roomCenter.x + wallW * 0.5, roomCenter.z - wallD, 0 );
+                                        addWall( planeLong, roomCenter.x - wallW * 0.5, roomCenter.z + wallD, Math.PI );
+                                        addWall( planeLong, roomCenter.x + wallW * 0.5, roomCenter.z + wallD, Math.PI );
+                                        addWall( planeSide, roomCenter.x + wallW, roomCenter.z, - Math.PI / 2 );
+                                        addWall( planeSide, roomCenter.x - wallW, roomCenter.z, Math.PI / 2 );
+
+                                        const intensity = bpcemLightIntensity;
+                                        const defaultLightSize = Math.min( wallW, roomSize.y ) * 0.5;
+                                        const lightSize = Math.max( 0.1, defaultLightSize * bpcemLightSize );
+
+                                        const blueRectLight = new THREE.RectAreaLight( bpcemLightBlue, intensity, lightSize, lightSize );
+                                        blueRectLight.position.set( roomCenter.x - wallW + 0.2, roomCenter.y, roomCenter.z );
+                                        blueRectLight.lookAt( roomCenter.x, roomCenter.y, roomCenter.z );
+                                        bpcemRoot.add( blueRectLight );
+                                        const blueHelper = new RectAreaLightHelper( blueRectLight );
+                                        blueHelper.visible = bpcemShowHelpers;
+                                        blueRectLight.add( blueHelper );
+
+                                        const redRectLight = new THREE.RectAreaLight( bpcemLightRed, intensity, lightSize, lightSize );
+                                        redRectLight.position.set( roomCenter.x + wallW - 0.2, roomCenter.y, roomCenter.z );
+                                        redRectLight.lookAt( roomCenter.x, roomCenter.y, roomCenter.z );
+                                        bpcemRoot.add( redRectLight );
+                                        const redHelper = new RectAreaLightHelper( redRectLight );
+                                        redHelper.visible = bpcemShowHelpers;
+                                        redRectLight.add( redHelper );
+
+                                        scene.userData.bpcemBlueLight = blueRectLight;
+                                        scene.userData.bpcemRedLight = redRectLight;
+                                        scene.userData.bpcemBlueHelper = blueHelper;
+                                        scene.userData.bpcemRedHelper = redHelper;
+                                        scene.userData.bpcemDefaultLightSize = defaultLightSize;
+                                        scene.userData.bpcemEnvNode = envTextureNode;
+
+                                        // Bake the room into the cube map once (walls + rect lights only).
+                                        const wasVisible = bpcemRoot.visible;
+                                        bpcemRoot.visible = true;
+                                        updateBpcemCubeMap( scene );
+                                        bpcemRoot.visible = wasVisible;
+
+                                }
+
+                                function applySceneSetup( options = {} ) {
+
+                                        const skipAutosave = !! options.skipAutosave;
+                                        const next = normalizeSceneSetup( sceneSetup );
+                                        sceneSetup = next;
+
+                                        scenes.forEach( function ( scene ) {
+
+                                                const isBrickRoom = sceneSetup === 'brick room';
+                                                if ( scene.userData.studioRoot ) {
+
+                                                        scene.userData.studioRoot.visible = ! isBrickRoom;
+                                                        scene.userData.studioRoot.traverse( function ( object ) {
+
+                                                                if ( object.isLight ) object.visible = ! isBrickRoom;
+
+                                                        } );
+
+                                                }
+
+                                                if ( scene.userData.bpcemRoot ) scene.userData.bpcemRoot.visible = isBrickRoom;
+
+                                                if ( renderer ) renderer.shadowMap.enabled = ! isBrickRoom;
+
+                                                if ( isBrickRoom ) {
+
+                                                        scene.userData.ground = scene.userData.bpcemFloor || scene.userData.studioGround;
+                                                        scene.backgroundNode = null;
+                                                        // Match webgpu_materials_envmaps_bpcem: env is on the floor
+                                                        // material only. Scene-level env double-lit the cone with the
+                                                        // baked room and made the first switch look blown out until
+                                                        // the next light/cubemap refresh.
+                                                        scene.environmentNode = null;
+                                                        clayBumpScaleUniform.value = 0.28;
+                                                        applyBpcemLighting( { skipCubeMap: true } );
+                                                        if ( ! options.skipCubeMap ) updateBpcemCubeMap( scene );
+
+                                                } else {
+
+                                                        scene.userData.ground = scene.userData.studioGround;
+                                                        scene.backgroundNode = color( 0xeeeeee );
+                                                        scene.environmentNode = null;
+                                                        clayBumpScaleUniform.value = 0.08;
+                                                        if ( scene.userData.studioGround ) scene.userData.studioGround.visible = showGroundPlane;
+                                                        if ( scene.userData.grid ) scene.userData.grid.visible = showGroundPlane;
+
+                                                }
+
+                                        } );
+
+                                        updateSceneSetupEditorsVisibility();
+                                        if ( ! skipAutosave ) scheduleAutosave();
                                         requestRender();
 
                                 }
@@ -4894,6 +5570,14 @@ import * as THREE from 'three/webgpu';
                                         // stick on the shared shadow override; swap+invalidate alone is unreliable.
                                         rebuildWallMaterials();
                                         resetSceneShadows();
+                                        assignActiveWallMaterial();
+
+                                        if ( ! isRestoring && wallMaterial === 'glass' ) warmClippedGlassShadows();
+                                        else requestRender();
+
+                                }
+
+                                function assignActiveWallMaterial() {
 
                                         const material = wallMaterials[ wallMaterial ] || wallMaterials.clay;
 
@@ -4903,9 +5587,6 @@ import * as THREE from 'three/webgpu';
                                                 if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = material;
 
                                         } );
-
-                                        if ( ! isRestoring && wallMaterial === 'glass' ) warmClippedGlassShadows();
-                                        else requestRender();
 
                                 }
 
@@ -4929,6 +5610,44 @@ import * as THREE from 'three/webgpu';
                                         animate();
                                         group.clipShadows = true;
                                         animate();
+
+                                }
+
+                                // Compile the glass castShadowNode pipeline at boot so the first user switch
+                                // to glass does not pay a cold shader build. Leaves the active material unchanged.
+                                function warmGlassShadowPipeline() {
+
+                                        if ( ! rendererReady || ! wallMaterials.glass ) return;
+
+                                        const active = wallMaterials[ wallMaterial ] || wallMaterials.clay;
+                                        const needSwap = active !== wallMaterials.glass;
+
+                                        if ( needSwap ) {
+
+                                                scenes.forEach( function ( scene ) {
+
+                                                        if ( scene.userData.coneMesh ) scene.userData.coneMesh.material = wallMaterials.glass;
+                                                        if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = wallMaterials.glass;
+
+                                                } );
+
+                                        }
+
+                                        const group = knotClippingGroups[ 0 ];
+                                        if ( group && group.clipShadows ) {
+
+                                                group.clipShadows = false;
+                                                animate();
+                                                group.clipShadows = true;
+                                                animate();
+
+                                        } else {
+
+                                                animate();
+
+                                        }
+
+                                        if ( needSwap ) assignActiveWallMaterial();
 
                                 }
 
@@ -5032,86 +5751,6 @@ import * as THREE from 'three/webgpu';
 
                                         const u = wallMaterials.glass && wallMaterials.glass.userData.causticStrength;
                                         if ( u ) u.value = wallCausticStrength;
-                                        requestRender();
-
-                                }
-
-                                function getMeshProjectedExtent( mesh, camera, options = {} ) {
-
-                                        const position = mesh.geometry.getAttribute( 'position' );
-                                        if ( ! position || position.count === 0 ) return 0;
-
-                                        mesh.updateWorldMatrix( true, false );
-                                        camera.updateMatrixWorld();
-
-                                        const clipVisible = !! options.clipVisible;
-                                        if ( clipVisible ) syncClippingPlanesToWorld();
-
-                                        let maxExtent = 0;
-                                        let counted = 0;
-
-                                        for ( let i = 0; i < position.count; i ++ ) {
-
-                                                _fitPoint.fromBufferAttribute( position, i ).applyMatrix4( mesh.matrixWorld );
-
-                                                if ( clipVisible && ! isPointOnVisibleCone( _fitPoint ) ) continue;
-
-                                                _fitPoint.project( camera );
-                                                maxExtent = Math.max( maxExtent, Math.abs( _fitPoint.x ), Math.abs( _fitPoint.y ) );
-                                                counted ++;
-
-                                        }
-
-                                        return counted > 0 ? maxExtent : 0;
-
-                                }
-
-                                function fitMeshInView( scene, mesh ) {
-
-                                        if ( ! mesh || ! mesh.geometry ) return;
-
-                                        const camera = scene.userData.camera;
-                                        const controls = scene.userData.controls;
-                                        if ( ! camera || ! controls ) return;
-
-                                        const clipVisible = mesh === scene.userData.coneMesh;
-                                        const maxExtent = getMeshProjectedExtent( mesh, camera, { clipVisible: clipVisible } );
-                                        if ( ! Number.isFinite( maxExtent ) || maxExtent <= AUTO_ZOOM_TRIGGER ) return;
-
-                                        const currentDistance = camera.position.distanceTo( controls.target );
-                                        if ( currentDistance <= 0 ) return;
-
-                                        _fitDir.copy( camera.position ).sub( controls.target ).normalize();
-
-                                        // One gentle corrective step: pull back only enough to near the frame edge.
-                                        let distance = Math.min( currentDistance * ( maxExtent / AUTO_ZOOM_FILL ), controls.maxDistance );
-                                        camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
-                                        camera.updateMatrixWorld();
-
-                                        const extentAfter = getMeshProjectedExtent( mesh, camera, { clipVisible: clipVisible } );
-                                        if ( Number.isFinite( extentAfter ) && extentAfter > AUTO_ZOOM_TRIGGER && distance < controls.maxDistance ) {
-
-                                                distance = Math.min( distance * ( extentAfter / AUTO_ZOOM_FILL ), controls.maxDistance );
-                                                camera.position.copy( controls.target ).addScaledVector( _fitDir, distance );
-
-                                        }
-
-                                        controls.update();
-
-                                }
-
-                                function ensureConeFitsInView() {
-
-                                        if ( ! autoZoom ) return;
-
-                                        for ( let i = 0; i < scenes.length; i ++ ) {
-
-                                                const scene = scenes[ i ];
-                                                fitMeshInView( scene, scene.userData.coneMesh );
-                                                fitMeshInView( scene, scene.userData.flattenedMesh );
-
-                                        }
-
                                         requestRender();
 
                                 }
@@ -5283,10 +5922,10 @@ import * as THREE from 'three/webgpu';
 
                                         } );
 
+                                        rebuildPaintOutline();
                                         scenes.forEach( updateStats );
                                         updateGeometryModeBadge();
-                                        if ( autoZoom ) ensureConeFitsInView();
-                                        else requestRender();
+                                        requestRender();
 
                                 }
 
@@ -5332,7 +5971,12 @@ import * as THREE from 'three/webgpu';
                                         if ( conicEditors.applyCuts ) conicEditors.applyCuts.setValue( params.applyCuts );
                                         if ( conicEditors.ClipShadows ) conicEditors.ClipShadows.setValue( params.ClipShadows );
                                         if ( conicEditors.showGroundPlane ) conicEditors.showGroundPlane.setValue( params.showGroundPlane );
-                                        if ( conicEditors.autoZoom ) conicEditors.autoZoom.setValue( params.autoZoom );
+                                        if ( conicEditors.sceneSetup ) conicEditors.sceneSetup.setValue( normalizeSceneSetup( params.sceneSetup ) );
+                                        if ( conicEditors.bpcemLightIntensity && params.bpcemLightIntensity != null ) conicEditors.bpcemLightIntensity.setValue( params.bpcemLightIntensity );
+                                        if ( conicEditors.bpcemLightSize && params.bpcemLightSize != null ) conicEditors.bpcemLightSize.setValue( params.bpcemLightSize );
+                                        if ( conicEditors.bpcemLightBlue && params.bpcemLightBlue ) conicEditors.bpcemLightBlue.setValue( paintColorToCssHex( params.bpcemLightBlue ) );
+                                        if ( conicEditors.bpcemLightRed && params.bpcemLightRed ) conicEditors.bpcemLightRed.setValue( paintColorToCssHex( params.bpcemLightRed ) );
+                                        if ( conicEditors.bpcemShowHelpers && params.bpcemShowHelpers != null ) conicEditors.bpcemShowHelpers.setValue( !! params.bpcemShowHelpers );
                                         if ( conicEditors.wallMaterial ) conicEditors.wallMaterial.setValue( params.wallMaterial );
                                         if ( conicEditors.wallColor ) {
 
@@ -5397,7 +6041,48 @@ import * as THREE from 'three/webgpu';
 
                                                 }
 
-                                                if ( 'autoZoom' in params ) autoZoom = params.autoZoom;
+                                                // Always restore scene setup; older saves without the field default to plain.
+                                                sceneSetup = normalizeSceneSetup( params.sceneSetup );
+                                                applySceneSetup( { skipAutosave: true } );
+
+                                                let bpcemLightingChanged = false;
+
+                                                if ( 'bpcemLightIntensity' in params && params.bpcemLightIntensity != null ) {
+
+                                                        bpcemLightIntensity = params.bpcemLightIntensity;
+                                                        bpcemLightingChanged = true;
+
+                                                }
+
+                                                if ( 'bpcemLightSize' in params && params.bpcemLightSize != null ) {
+
+                                                        bpcemLightSize = params.bpcemLightSize;
+                                                        bpcemLightingChanged = true;
+
+                                                }
+
+                                                if ( 'bpcemLightBlue' in params && params.bpcemLightBlue ) {
+
+                                                        bpcemLightBlue = paintColorToCssHex( params.bpcemLightBlue );
+                                                        bpcemLightingChanged = true;
+
+                                                }
+
+                                                if ( 'bpcemLightRed' in params && params.bpcemLightRed ) {
+
+                                                        bpcemLightRed = paintColorToCssHex( params.bpcemLightRed );
+                                                        bpcemLightingChanged = true;
+
+                                                }
+
+                                                if ( 'bpcemShowHelpers' in params && params.bpcemShowHelpers != null ) {
+
+                                                        bpcemShowHelpers = !! params.bpcemShowHelpers;
+                                                        bpcemLightingChanged = true;
+
+                                                }
+
+                                                if ( bpcemLightingChanged ) applyBpcemLighting( { skipCubeMap: sceneSetup !== 'brick room' } );
 
                                                 if ( isConicV2Enabled() ) {
 
@@ -5460,9 +6145,6 @@ import * as THREE from 'three/webgpu';
 
                                                 }
 
-                                                const sizeChanged = ( 'coneAngle' in params && params.coneAngle !== coneAngle )
-                                                        || ( 'scale' in params && params.scale !== coneScale )
-                                                        || ( 'coneHeight' in params && ! ( 'scale' in params ) && params.coneHeight !== coneHeight );
                                                 const cutAngleChanging = ( 'cutAngle' in params && params.cutAngle !== cutAngle )
                                                         || ( 'cutAzimuth' in params && params.cutAzimuth !== cutAzimuth );
                                                 const wasLevelled = cutAngleChanging && areCutPlanesLevelled();
@@ -5577,7 +6259,6 @@ import * as THREE from 'three/webgpu';
                                                 if ( wasLevelled ) levelCutPlanesToGround();
                                                 // Restore after any level/fit side-effects so the saved pose wins.
                                                 applyConeRigPose( params );
-                                                if ( sizeChanged ) ensureConeFitsInView();
                                                 syncConicEditors();
 
                                                 if ( 'paintColor' in params && params.paintColor ) paintColor = paintColorToCssHex( params.paintColor );
@@ -5593,9 +6274,11 @@ import * as THREE from 'three/webgpu';
                                         } finally {
 
                                                 isRestoring = false;
-                                                endParamsLoading();
 
                                         }
+
+                                        await flushRender();
+                                        endParamsLoading();
 
                                 }
 
@@ -5630,6 +6313,7 @@ import * as THREE from 'three/webgpu';
                                 store.pending.length = 0;
                                 await saveStore();
 
+                                warmGlassShadowPipeline();
                                 bootParamsLoading = false;
                                 endParamsLoading();
                                 requestRender();
@@ -5708,11 +6392,21 @@ import * as THREE from 'three/webgpu';
                                                         wallThickness = 0.25;
                                                         wallTransmission = 1;
                                                         wallCausticStrength = 0.35;
+                                                        sceneSetup = 'plain';
+                                                        bpcemLightIntensity = 5;
+                                                        bpcemLightSize = 1;
+                                                        bpcemLightBlue = '#9aaeff';
+                                                        bpcemLightRed = '#f3aaaa';
+                                                        bpcemShowHelpers = true;
+                                                        applyBpcemLighting( { skipCubeMap: true } );
+                                                        applySceneSetup( { skipAutosave: true } );
                                                         applyWallThickness();
                                                         applyWallTransmission();
                                                         applyWallCausticStrength();
                                                         propsConic.RandomizeWallColor();
-                                                        updateConeWallMaterial();
+                                                        // Keep existing materials — full rebuild is only needed when
+                                                        // switching wall types mid-session (sticky glass shadow pipelines).
+                                                        assignActiveWallMaterial();
                                                         updateWallColorEditorsVisibility();
 
                                                         knotClippingGroups.forEach( function ( group ) {
@@ -5737,12 +6431,12 @@ import * as THREE from 'three/webgpu';
                                                 } finally {
 
                                                         isRestoring = false;
-                                                        endParamsLoading();
 
                                                 }
 
-                                                if ( autoZoom ) ensureConeFitsInView();
                                                 scheduleAutosave();
+                                                await flushRender();
+                                                endParamsLoading();
 
                                         },
                                         async Delete() {
@@ -8290,7 +8984,7 @@ import * as THREE from 'three/webgpu';
                                 }
 
                                 renderer.setRenderTarget( null );
-                                renderer.setClearColor( 0xeeeeee );
+                                renderer.setClearColor( scene.userData.bpcemRoot && scene.userData.bpcemRoot.visible ? 0x1a1a1a : 0xeeeeee );
                                 renderer.clear();
                                 renderer.render( scene, camera );
 
