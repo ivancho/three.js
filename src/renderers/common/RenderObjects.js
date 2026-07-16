@@ -138,7 +138,23 @@ class RenderObjects {
 
 					renderObject.dispose();
 
-					renderObject = this.get( object, material, scene, camera, lightsNode, renderContext, clippingContext, passId );
+					// Recreate without recursing into get(). If dispose failed to
+					// remove the ChainMap entry (e.g. mismatched key length), accept
+					// the current key instead of blowing the call stack.
+					renderObject = chainMap.get( _chainKeys );
+
+					if ( renderObject !== undefined ) {
+
+						renderObject.initialCacheKey = renderObject.getCacheKey();
+						renderObject.version = material.version;
+
+					} else {
+
+						renderObject = this.createRenderObject( this.nodes, this.geometries, this.renderer, object, material, scene, camera, lightsNode, renderContext, clippingContext, passId );
+
+						chainMap.set( _chainKeys, renderObject );
+
+					}
 
 				} else {
 
@@ -207,13 +223,27 @@ class RenderObjects {
 
 		const renderObject = new RenderObject( nodes, geometries, renderer, object, material, scene, camera, lightsNode, renderContext, clippingContext );
 
+		// Must match the keys used in get(), including the source-material key
+		// for shadow override materials. ChainMap indexes by key length, so
+		// deleting with a shorter array leaves a stale entry and causes
+		// infinite recreate loops on the next get().
+		const chainKeys = [
+			object,
+			material,
+			renderContext,
+			lightsNode,
+			( material.isShadowPassMaterial === true )
+				? ( renderer._currentSourceMaterial || _noSourceMaterial )
+				: _noSourceMaterial
+		];
+
 		renderObject.onDispose = () => {
 
 			this.pipelines.delete( renderObject );
 			this.bindings.deleteForRender( renderObject );
 			this.nodes.delete( renderObject );
 
-			chainMap.delete( renderObject.getChainArray() );
+			chainMap.delete( chainKeys );
 
 		};
 
