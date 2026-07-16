@@ -4121,32 +4121,77 @@ import * as THREE from 'three/webgpu';
                                         disposePaintOutline( scene );
 
                                         const edges = new THREE.EdgesGeometry( flatMesh.geometry, 1 );
+                                        const edgePositions = edges.getAttribute( 'position' );
+
+                                        function createEdgeRibbonGeometry( width ) {
+
+                                                const positions = [];
+                                                const halfWidth = width * 0.5;
+
+                                                for ( let i = 0; i + 1 < edgePositions.count; i += 2 ) {
+
+                                                        const ax = edgePositions.getX( i );
+                                                        const ay = edgePositions.getY( i );
+                                                        const az = edgePositions.getZ( i );
+                                                        const bx = edgePositions.getX( i + 1 );
+                                                        const by = edgePositions.getY( i + 1 );
+                                                        const bz = edgePositions.getZ( i + 1 );
+                                                        const dx = bx - ax;
+                                                        const dz = bz - az;
+                                                        const length = Math.hypot( dx, dz );
+                                                        if ( length < 1e-8 ) continue;
+
+                                                        const ox = - dz / length * halfWidth;
+                                                        const oz = dx / length * halfWidth;
+
+                                                        positions.push(
+                                                                ax + ox, ay, az + oz,
+                                                                ax - ox, ay, az - oz,
+                                                                bx + ox, by, bz + oz,
+                                                                bx + ox, by, bz + oz,
+                                                                ax - ox, ay, az - oz,
+                                                                bx - ox, by, bz - oz
+                                                        );
+
+                                                }
+
+                                                const geometry = new THREE.BufferGeometry();
+                                                geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+                                                return geometry;
+
+                                        }
+
                                         const outline = new THREE.Group();
                                         outline.name = 'paintOutline';
-                                        // Slight lift in local Y so the lines sit above the pattern plane.
+                                        // Slight lift in local Y so the ribbons sit above the pattern plane.
                                         outline.position.y = 0.015;
                                         outline.renderOrder = 10;
 
-                                        const glow = new THREE.LineSegments( edges, new THREE.LineBasicMaterial( {
+                                        // Mesh ribbons avoid LineBasicNodeMaterial's unstable first-build cache key
+                                        // in some production WebGPU builds.
+                                        const glow = new THREE.Mesh( createEdgeRibbonGeometry( 0.035 ), new THREE.MeshBasicNodeMaterial( {
                                                 color: 0x9ec9e8,
                                                 transparent: true,
                                                 opacity: 0.18,
                                                 depthWrite: false,
                                                 depthTest: true,
-                                                blending: THREE.AdditiveBlending
+                                                blending: THREE.AdditiveBlending,
+                                                side: THREE.DoubleSide
                                         } ) );
                                         glow.renderOrder = 10;
                                         outline.add( glow );
 
-                                        const core = new THREE.LineSegments( edges.clone(), new THREE.LineBasicMaterial( {
+                                        const core = new THREE.Mesh( createEdgeRibbonGeometry( 0.012 ), new THREE.MeshBasicNodeMaterial( {
                                                 color: 0xc5dbe8,
                                                 transparent: true,
                                                 opacity: 0.4,
                                                 depthWrite: false,
-                                                depthTest: true
+                                                depthTest: true,
+                                                side: THREE.DoubleSide
                                         } ) );
                                         core.renderOrder = 11;
                                         outline.add( core );
+                                        edges.dispose();
 
                                         outline.visible = paintMode;
                                         flatMesh.add( outline );
