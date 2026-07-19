@@ -812,6 +812,38 @@ import * as THREE from 'three/webgpu';
 
                         }
 
+                        // Flat pattern stand-in when the cone is glass: same paint + glass look, but no
+                        // transmission. Transmissive surfaces are left out of the transmission backdrop,
+                        // so a glass pattern behind the cone would vanish (or show without paint).
+                        // Keeping this opaque puts paint in the buffer the cone samples through.
+                        function createGlassPatternMaterial( baseColorHex ) {
+
+                                const baseCol = baseColorHex
+                                        ? new THREE.Color( baseColorHex )
+                                        : new THREE.Color().setHSL( Math.random(), 0.75, 0.55 );
+                                const material = new THREE.MeshPhysicalNodeMaterial( {
+
+                                        color: baseCol,
+                                        side: THREE.DoubleSide,
+                                        alphaToCoverage: true,
+                                        metalness: 0,
+                                        roughness: 0.08,
+                                        transmission: 0,
+                                        thickness: 0.25,
+                                        ior: 1.5,
+                                        specularIntensity: 1
+
+                                } );
+                                material.userData.baseColorHex = '#' + baseCol.getHexString();
+                                const baseColorUniform = uniform( material.color );
+                                material.userData.baseColorUniform = baseColorUniform;
+                                applyPaintOverlay( material, baseColorUniform );
+                                material.transparent = false;
+                                applyOpaquePaintShadow( material );
+                                return material;
+
+                        }
+
                         function createPlainMaterial( baseColorHex ) {
 
                                 const baseCol = baseColorHex
@@ -1108,6 +1140,9 @@ import * as THREE from 'three/webgpu';
                                         glass: createGlassMaterial(),
                                         plain: createPlainMaterial()
                                 };
+                                wallMaterials.glassPattern = createGlassPatternMaterial(
+                                        wallMaterials.glass.userData.baseColorHex
+                                );
 
                                 const content = document.getElementById( 'content' );
                                 const panelsRow = document.createElement( 'div' );
@@ -5555,10 +5590,12 @@ import * as THREE from 'three/webgpu';
 
                                         disposeWallMaterial( wallMaterials.clay );
                                         disposeWallMaterial( wallMaterials.glass );
+                                        disposeWallMaterial( wallMaterials.glassPattern );
                                         disposeWallMaterial( wallMaterials.plain );
 
                                         wallMaterials.clay = createClayMaterial();
                                         wallMaterials.glass = createGlassMaterial( glassHex || undefined );
+                                        wallMaterials.glassPattern = createGlassPatternMaterial( glassHex || undefined );
                                         wallMaterials.plain = createPlainMaterial( plainHex || undefined );
 
                                         applyWallThickness();
@@ -5628,11 +5665,16 @@ import * as THREE from 'three/webgpu';
                                 function assignActiveWallMaterial() {
 
                                         const material = wallMaterials[ shapeMaterial ] || wallMaterials.clay;
+                                        // Glass cone samples only the opaque buffer for transmission. Use an
+                                        // opaque glass-look material on the flat pattern so paint shows through.
+                                        const flatMaterial = shapeMaterial === 'glass'
+                                                ? ( wallMaterials.glassPattern || material )
+                                                : material;
 
                                         scenes.forEach( function ( scene ) {
 
                                                 if ( scene.userData.coneMesh ) scene.userData.coneMesh.material = material;
-                                                if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = material;
+                                                if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = flatMaterial;
 
                                         } );
 
@@ -5675,7 +5717,11 @@ import * as THREE from 'three/webgpu';
                                                 scenes.forEach( function ( scene ) {
 
                                                         if ( scene.userData.coneMesh ) scene.userData.coneMesh.material = wallMaterials.glass;
-                                                        if ( scene.userData.flattenedMesh ) scene.userData.flattenedMesh.material = wallMaterials.glass;
+                                                        if ( scene.userData.flattenedMesh ) {
+
+                                                                scene.userData.flattenedMesh.material = wallMaterials.glassPattern || wallMaterials.glass;
+
+                                                        }
 
                                                 } );
 
@@ -5715,6 +5761,13 @@ import * as THREE from 'three/webgpu';
 
                                                 wallMaterials.glass.color.copy( baseCol );
                                                 wallMaterials.glass.userData.baseColorHex = cssHex;
+
+                                        }
+
+                                        if ( wallMaterials.glassPattern ) {
+
+                                                wallMaterials.glassPattern.color.copy( baseCol );
+                                                wallMaterials.glassPattern.userData.baseColorHex = cssHex;
 
                                         }
 
@@ -5790,6 +5843,8 @@ import * as THREE from 'three/webgpu';
                                                 if ( material ) material.thickness = wallThickness;
 
                                         }
+
+                                        if ( wallMaterials.glassPattern ) wallMaterials.glassPattern.thickness = wallThickness;
 
                                         requestRender();
 
