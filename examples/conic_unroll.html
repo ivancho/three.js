@@ -747,11 +747,14 @@ import * as THREE from 'three/webgpu';
                                 material.transparent = true;
                                 material.opacity = 1;
                                 material.color = baseCol;
-                                // Single DoubleSide shadow pass so outer + inner walls both contribute
-                                // (dual Front/Back at equal shell depth lets one side wipe the other).
-                                material.forceSinglePass = true;
+                                // DoubleSide + transmission needs Back→Front (forceSinglePass false).
+                                // Back faces draw first and land in the framebuffer; the Front pass then
+                                // copies that as its transmission backdrop — so paint on the far wall of
+                                // the cone shows through the near wall. forceSinglePass would sample only
+                                // the opaque buffer and wipe the far-wall paint.
+                                // Shadow dual-pass uses Front→Back in Renderer so thin shells do not wipe.
+                                material.forceSinglePass = false;
                                 material.shadowSide = THREE.DoubleSide;
-                                // Single full-view render — transmission samples this framebuffer correctly.
                                 material.transmission = 1;
                                 material.thickness = 0.25;
                                 material.ior = 1.5;
@@ -949,7 +952,7 @@ import * as THREE from 'three/webgpu';
                                 let bpcemLightRed = '#f3aaaa';
                                 let bpcemShowHelpers = true;
                                 let bpcemCubeMapTimer = null;
-                                let wallMaterial = 'clay';
+                                let shapeMaterial = 'clay';
                                 const WALL_MATERIALS = [ 'clay', 'glass', 'plain' ];
                                 // null = unset → plain/glass stay on their load-time random color until the user picks one.
                                 let wallBaseColor = null;
@@ -1150,7 +1153,7 @@ import * as THREE from 'three/webgpu';
                                 element.appendChild( statsElement );
                                 scene.userData.statsElement = statsElement;
 
-                                const camera = new THREE.PerspectiveCamera( 40, 1, 0.1, 200 );
+                                const camera = new THREE.PerspectiveCamera( 40, 1, 0.1, 1000 );
                                 camera.position.set( 4, 8, 14 );
                                 scene.userData.camera = camera;
 
@@ -2567,7 +2570,7 @@ import * as THREE from 'three/webgpu';
                                                 a.bpcemShowHelpers === b.bpcemShowHelpers &&
                                                 a.patternFirst === b.patternFirst &&
                                                 a.coneUsesParametricGeometry === b.coneUsesParametricGeometry &&
-                                                a.wallMaterial === b.wallMaterial &&
+                                                a.shapeMaterial === b.shapeMaterial &&
                                                 a.wallBaseColor === b.wallBaseColor &&
                                                 a.thickness === b.thickness &&
                                                 a.transmission === b.transmission &&
@@ -3034,7 +3037,7 @@ import * as THREE from 'three/webgpu';
                                                 bpcemShowHelpers: bpcemShowHelpers,
                                                 patternFirst: isConicV2Enabled() ? patternFirst : false,
                                                 coneUsesParametricGeometry: isConicV2Enabled() ? coneUsesParametricGeometry : true,
-                                                wallMaterial: wallMaterial,
+                                                shapeMaterial: shapeMaterial,
                                                 wallBaseColor: wallBaseColor,
                                                 thickness: wallThickness,
                                                 transmission: wallTransmission,
@@ -3638,16 +3641,16 @@ import * as THREE from 'three/webgpu';
 
                                         },
 
-                                        get wallMaterial() {
+                                        get shapeMaterial() {
 
-                                                return wallMaterial;
+                                                return shapeMaterial;
 
                                         },
 
-                                        set wallMaterial( v ) {
+                                        set shapeMaterial( v ) {
 
                                                 const next = v === 'duck' ? 'glass' : v;
-                                                wallMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
+                                                shapeMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
                                                 updateConeWallMaterial();
                                                 updateWallColorEditorsVisibility();
                                                 scheduleAutosave();
@@ -3955,7 +3958,7 @@ import * as THREE from 'three/webgpu';
                                 conicEditors.bpcemShowHelpers = folderScene.add( propsConic, 'bpcemShowHelpers' ).name( 'light helpers' );
                                 updateSceneSetupEditorsVisibility();
 
-                                conicEditors.wallMaterial = folderMaterial.add( propsConic, 'wallMaterial', WALL_MATERIALS );
+                                conicEditors.shapeMaterial = folderMaterial.add( propsConic, 'shapeMaterial', WALL_MATERIALS );
                                 conicEditors.wallColor = folderMaterial.addColor( propsConic, 'wallColor' ).name( 'color (auto)' );
                                 conicEditors.randomizeWallColor = folderMaterial.add( propsConic, 'RandomizeWallColor' ).name( 'randomize color' );
                                 conicEditors.thickness = folderMaterial.add( propsConic, 'thickness', 0, 5, 0.01 );
@@ -5366,7 +5369,7 @@ import * as THREE from 'three/webgpu';
                                         renderTarget.texture.generateMipmaps = true;
                                         renderTarget.texture.mapping = THREE.CubeReflectionMapping;
 
-                                        const cubeCamera = new THREE.CubeCamera( 0.5, 200, renderTarget );
+                                        const cubeCamera = new THREE.CubeCamera( 0.5, 1000, renderTarget );
                                         cubeCamera.position.set( roomCenter.x, floorY, roomCenter.z );
                                         scene.userData.bpcemCubeCamera = cubeCamera;
                                         scene.userData.bpcemRenderTarget = renderTarget;
@@ -5617,14 +5620,14 @@ import * as THREE from 'three/webgpu';
                                         resetSceneShadows();
                                         assignActiveWallMaterial();
 
-                                        if ( ! isRestoring && wallMaterial === 'glass' ) warmClippedGlassShadows();
+                                        if ( ! isRestoring && shapeMaterial === 'glass' ) warmClippedGlassShadows();
                                         else requestRender();
 
                                 }
 
                                 function assignActiveWallMaterial() {
 
-                                        const material = wallMaterials[ wallMaterial ] || wallMaterials.clay;
+                                        const material = wallMaterials[ shapeMaterial ] || wallMaterials.clay;
 
                                         scenes.forEach( function ( scene ) {
 
@@ -5641,7 +5644,7 @@ import * as THREE from 'three/webgpu';
                                 // hits that path; loading ClipShadows=false then enabling it does not.
                                 function warmClippedGlassShadows() {
 
-                                        if ( ! rendererReady || wallMaterial !== 'glass' ) return;
+                                        if ( ! rendererReady || shapeMaterial !== 'glass' ) return;
 
                                         const group = knotClippingGroups[ 0 ];
                                         if ( ! group || ! group.clipShadows ) {
@@ -5664,7 +5667,7 @@ import * as THREE from 'three/webgpu';
 
                                         if ( ! rendererReady || ! wallMaterials.glass ) return;
 
-                                        const active = wallMaterials[ wallMaterial ] || wallMaterials.clay;
+                                        const active = wallMaterials[ shapeMaterial ] || wallMaterials.clay;
                                         const needSwap = active !== wallMaterials.glass;
 
                                         if ( needSwap ) {
@@ -5722,8 +5725,8 @@ import * as THREE from 'three/webgpu';
 
                                 function updateWallColorEditorsVisibility() {
 
-                                        const showColor = wallMaterial === 'plain' || wallMaterial === 'glass';
-                                        const showGlass = wallMaterial === 'glass';
+                                        const showColor = shapeMaterial === 'plain' || shapeMaterial === 'glass';
+                                        const showGlass = shapeMaterial === 'glass';
 
                                         if ( conicEditors.wallColor ) {
 
@@ -5743,6 +5746,20 @@ import * as THREE from 'three/webgpu';
 
                                                 if ( showGlass ) conicEditors.causticStrength.show();
                                                 else conicEditors.causticStrength.hide();
+
+                                        }
+
+                                        if ( conicEditors.thickness ) {
+
+                                                if ( showGlass ) conicEditors.thickness.show();
+                                                else conicEditors.thickness.hide();
+
+                                        }
+
+                                        if ( conicEditors.transmission ) {
+
+                                                if ( showGlass ) conicEditors.transmission.show();
+                                                else conicEditors.transmission.hide();
 
                                         }
 
@@ -6022,7 +6039,7 @@ import * as THREE from 'three/webgpu';
                                         if ( conicEditors.bpcemLightBlue && params.bpcemLightBlue ) conicEditors.bpcemLightBlue.setValue( paintColorToCssHex( params.bpcemLightBlue ) );
                                         if ( conicEditors.bpcemLightRed && params.bpcemLightRed ) conicEditors.bpcemLightRed.setValue( paintColorToCssHex( params.bpcemLightRed ) );
                                         if ( conicEditors.bpcemShowHelpers && params.bpcemShowHelpers != null ) conicEditors.bpcemShowHelpers.setValue( !! params.bpcemShowHelpers );
-                                        if ( conicEditors.wallMaterial ) conicEditors.wallMaterial.setValue( params.wallMaterial );
+                                        if ( conicEditors.shapeMaterial ) conicEditors.shapeMaterial.setValue( params.shapeMaterial || params.wallMaterial || shapeMaterial );
                                         if ( conicEditors.wallColor ) {
 
                                                 ignoreWallColorPersist = true;
@@ -6147,10 +6164,11 @@ import * as THREE from 'three/webgpu';
 
                                                 }
 
-                                                if ( 'wallMaterial' in params ) {
+                                                if ( 'shapeMaterial' in params || 'wallMaterial' in params ) {
 
-                                                        const next = params.wallMaterial === 'duck' ? 'glass' : params.wallMaterial;
-                                                        wallMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
+                                                        const raw = ( 'shapeMaterial' in params ) ? params.shapeMaterial : params.wallMaterial;
+                                                        const next = raw === 'duck' ? 'glass' : raw;
+                                                        shapeMaterial = WALL_MATERIALS.includes( next ) ? next : 'clay';
                                                         updateConeWallMaterial();
 
                                                 }
@@ -6432,7 +6450,7 @@ import * as THREE from 'three/webgpu';
                                                         cutDownOffsetPct = 40;
                                                         syncCutPlaneConstants();
                                                         updatePlaneNormals();
-                                                        wallMaterial = 'clay';
+                                                        shapeMaterial = 'clay';
                                                         wallBaseColor = null;
                                                         wallThickness = 0.25;
                                                         wallTransmission = 1;
