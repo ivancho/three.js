@@ -983,6 +983,10 @@ import * as THREE from 'three/webgpu';
 
                                 const FLOOR_CENTER = new THREE.Vector3( 4, - 5, 0 );
                                 const BASE_GROUND_SIZE = 40;
+                                const BASE_GROUND_DIVISIONS = 40;
+                                const GRID_CELL_SIZE = BASE_GROUND_SIZE / BASE_GROUND_DIVISIONS;
+                                const GRID_CENTER_COLOR = 0x3a3a3a;
+                                const GRID_COLOR = 0x6a6a6a;
                                 const BASE_SHADOW_EXTENT = 28;
                                 // Placement uses the default-framed workspace, not the full floor mesh
                                 // (plain 40×40 / brick 160×80 corners sit outside the starting camera view).
@@ -1439,7 +1443,7 @@ import * as THREE from 'three/webgpu';
                                 scene.add( studioRoot );
 
                                 const ground = new THREE.Mesh(
-                                        new THREE.PlaneGeometry( BASE_GROUND_SIZE, BASE_GROUND_SIZE, 40, 40 ),
+                                        new THREE.PlaneGeometry( BASE_GROUND_SIZE, BASE_GROUND_SIZE, BASE_GROUND_DIVISIONS, BASE_GROUND_DIVISIONS ),
                                         new THREE.MeshPhongNodeMaterial( { color: 0xa0adaf, shininess: 150, alphaToCoverage: true } )
                                 );
 
@@ -1449,10 +1453,18 @@ import * as THREE from 'three/webgpu';
                                 ground.visible = showGroundPlane;
                                 studioRoot.add( ground );
 
-                                const grid = new THREE.GridHelper( BASE_GROUND_SIZE, 40, 0x3a3a3a, 0x6a6a6a );
-                                grid.position.set( FLOOR_CENTER.x, FLOOR_CENTER.y + 0.02, FLOOR_CENTER.z );
-                                grid.material.transparent = false;
-                                grid.visible = showGroundPlane;
+                                function createStudioGrid( size, divisions ) {
+
+                                        const next = new THREE.GridHelper( size, divisions, GRID_CENTER_COLOR, GRID_COLOR );
+                                        next.position.set( FLOOR_CENTER.x, FLOOR_CENTER.y + 0.02, FLOOR_CENTER.z );
+                                        next.material.transparent = false;
+                                        next.visible = showGroundPlane;
+                                        next.userData.divisions = divisions;
+                                        return next;
+
+                                }
+
+                                let grid = createStudioGrid( BASE_GROUND_SIZE, BASE_GROUND_DIVISIONS );
                                 studioRoot.add( grid );
 
                                 scene.userData.ground = ground;
@@ -1548,10 +1560,22 @@ import * as THREE from 'three/webgpu';
 
                                 updateGroundToConeScale = function () {
 
-                                        const s = coneScale;
-                                        const extent = BASE_SHADOW_EXTENT * s;
-                                        ground.scale.set( s, s, 1 );
-                                        grid.scale.set( s, 1, s );
+                                        const divisions = Math.max( 1, Math.round( BASE_GROUND_SIZE * coneScale / GRID_CELL_SIZE ) );
+                                        const size = divisions * GRID_CELL_SIZE;
+                                        const groundScale = size / BASE_GROUND_SIZE;
+                                        const extent = BASE_SHADOW_EXTENT * groundScale;
+                                        ground.scale.set( groundScale, groundScale, 1 );
+
+                                        if ( grid.userData.divisions !== divisions ) {
+
+                                                studioRoot.remove( grid );
+                                                grid.geometry.dispose();
+                                                grid.material.dispose();
+                                                grid = createStudioGrid( size, divisions );
+                                                studioRoot.add( grid );
+                                                scene.userData.grid = grid;
+
+                                        }
 
                                         function applyDirectionalShadow( light ) {
 
