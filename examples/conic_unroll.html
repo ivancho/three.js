@@ -982,6 +982,8 @@ import * as THREE from 'three/webgpu';
                                 }
 
                                 const FLOOR_CENTER = new THREE.Vector3( 4, - 5, 0 );
+                                const BASE_GROUND_SIZE = 40;
+                                const BASE_SHADOW_EXTENT = 28;
                                 // Placement uses the default-framed workspace, not the full floor mesh
                                 // (plain 40×40 / brick 160×80 corners sit outside the starting camera view).
                                 const VISIBLE_FLOOR_SIZE = { x: 16, z: 16 };
@@ -1104,12 +1106,15 @@ import * as THREE from 'three/webgpu';
                                 updatePlaneNormals();
                                 syncCutPlaneConstants();
 
+                                let updateGroundToConeScale = function () {};
+
                                 function setConeScale( next ) {
 
                                         coneScale = next;
                                         coneHeight = BASE_CONE_HEIGHT * coneScale;
                                         coneRadius = Math.tan( coneAngle ) * coneHeight;
                                         syncCutPlaneConstants();
+                                        updateGroundToConeScale();
 
                                 }
 
@@ -1434,7 +1439,7 @@ import * as THREE from 'three/webgpu';
                                 scene.add( studioRoot );
 
                                 const ground = new THREE.Mesh(
-                                        new THREE.PlaneGeometry( 40, 40, 40, 40 ),
+                                        new THREE.PlaneGeometry( BASE_GROUND_SIZE, BASE_GROUND_SIZE, 40, 40 ),
                                         new THREE.MeshPhongNodeMaterial( { color: 0xa0adaf, shininess: 150, alphaToCoverage: true } )
                                 );
 
@@ -1444,10 +1449,9 @@ import * as THREE from 'three/webgpu';
                                 ground.visible = showGroundPlane;
                                 studioRoot.add( ground );
 
-                                const grid = new THREE.GridHelper( 40, 40, 0xcccccc, 0xaaaaaa );
-                                grid.position.set( 4, - 5, 0 );
-                                grid.material.opacity = 0.75;
-                                grid.material.transparent = true;
+                                const grid = new THREE.GridHelper( BASE_GROUND_SIZE, 40, 0x3a3a3a, 0x6a6a6a );
+                                grid.position.set( FLOOR_CENTER.x, FLOOR_CENTER.y + 0.02, FLOOR_CENTER.z );
+                                grid.material.transparent = false;
                                 grid.visible = showGroundPlane;
                                 studioRoot.add( grid );
 
@@ -1459,16 +1463,14 @@ import * as THREE from 'three/webgpu';
 
                                 studioRoot.add( new THREE.AmbientLight( 0xcccccc, 0.7 ) );
 
-                                // Ground is centered at x=4 and spans 40×40; keep lights / shadow
-                                // frustums centered there so caustics don't drop out on one side.
-                                const groundCenter = new THREE.Vector3( 4, - 5, 0 );
-                                const shadowExtent = 28;
+                                // Ground is centered at x=4; size and shadow frustums scale with the cone.
+                                const groundCenter = FLOOR_CENTER.clone();
                                 const lightRaise = 10;
 
                                 // Reach ground + lateral extent, with a little slack.
-                                function lightReach( lightY ) {
+                                function lightReach( lightY, extent ) {
 
-                                        return Math.abs( lightY - groundCenter.y ) + shadowExtent + 5;
+                                        return Math.abs( lightY - groundCenter.y ) + extent + 5;
 
                                 }
 
@@ -1480,7 +1482,6 @@ import * as THREE from 'three/webgpu';
                                 spotLight.castShadow = true;
                                 spotLight.shadow.mapType = THREE.HalfFloatType; // HDR caustics through transparent walls
                                 spotLight.shadow.camera.near = 1;
-                                spotLight.shadow.camera.far = lightReach( spotLight.position.y );
                                 spotLight.shadow.mapSize.width = 2048;
                                 spotLight.shadow.mapSize.height = 2048;
                                 spotLight.shadow.radius = 4;
@@ -1493,12 +1494,6 @@ import * as THREE from 'three/webgpu';
                                 dirLight.castShadow = true;
                                 dirLight.shadow.mapType = THREE.HalfFloatType;
                                 dirLight.shadow.camera.near = 0.5;
-                                dirLight.shadow.camera.far = lightReach( dirLight.position.y );
-                                dirLight.shadow.camera.right = shadowExtent;
-                                dirLight.shadow.camera.left = - shadowExtent;
-                                dirLight.shadow.camera.top = shadowExtent;
-                                dirLight.shadow.camera.bottom = - shadowExtent;
-                                dirLight.shadow.camera.updateProjectionMatrix();
                                 dirLight.shadow.mapSize.width = 2048;
                                 dirLight.shadow.mapSize.height = 2048;
                                 studioRoot.add( dirLight );
@@ -1506,46 +1501,38 @@ import * as THREE from 'three/webgpu';
 
                                 const lightAbove = new THREE.PointLight( 0xffffff, 50 );
                                 lightAbove.position.set( groundCenter.x + 3, 10 + lightRaise, groundCenter.z + 4 );
-                                lightAbove.distance = lightReach( lightAbove.position.y );
                                 lightAbove.castShadow = true;
                                 lightAbove.shadow.mapType = THREE.HalfFloatType;
                                 lightAbove.shadow.mapSize.width = 1024;
                                 lightAbove.shadow.mapSize.height = 1024;
                                 lightAbove.shadow.camera.near = 0.5;
-                                lightAbove.shadow.camera.far = lightAbove.distance;
                                 studioRoot.add( lightAbove );
 
                                 const lightAboveFill = new THREE.PointLight( 0xfff2e0, 30 );
                                 lightAboveFill.position.set( groundCenter.x - 4, 8 + lightRaise, groundCenter.z - 3 );
-                                lightAboveFill.distance = lightReach( lightAboveFill.position.y );
                                 lightAboveFill.castShadow = true;
                                 lightAboveFill.shadow.mapType = THREE.HalfFloatType;
                                 lightAboveFill.shadow.mapSize.width = 512;
                                 lightAboveFill.shadow.mapSize.height = 512;
                                 lightAboveFill.shadow.camera.near = 0.5;
-                                lightAboveFill.shadow.camera.far = lightAboveFill.distance;
                                 studioRoot.add( lightAboveFill );
 
                                 const lightBelow = new THREE.PointLight( 0xffffff, 40 );
                                 lightBelow.position.set( groundCenter.x - 2, - 8 + lightRaise, groundCenter.z + 3 );
-                                lightBelow.distance = lightReach( lightBelow.position.y );
                                 lightBelow.castShadow = true;
                                 lightBelow.shadow.mapType = THREE.HalfFloatType;
                                 lightBelow.shadow.mapSize.width = 1024;
                                 lightBelow.shadow.mapSize.height = 1024;
                                 lightBelow.shadow.camera.near = 0.5;
-                                lightBelow.shadow.camera.far = lightBelow.distance;
                                 studioRoot.add( lightBelow );
 
                                 const lightBelowFill = new THREE.PointLight( 0xe0f0ff, 25 );
                                 lightBelowFill.position.set( groundCenter.x + 4, - 6 + lightRaise, groundCenter.z - 4 );
-                                lightBelowFill.distance = lightReach( lightBelowFill.position.y );
                                 lightBelowFill.castShadow = true;
                                 lightBelowFill.shadow.mapType = THREE.HalfFloatType;
                                 lightBelowFill.shadow.mapSize.width = 512;
                                 lightBelowFill.shadow.mapSize.height = 512;
                                 lightBelowFill.shadow.camera.near = 0.5;
-                                lightBelowFill.shadow.camera.far = lightBelowFill.distance;
                                 studioRoot.add( lightBelowFill );
 
                                 const dirLightBelow = new THREE.DirectionalLight( 0x888888, 1.5 );
@@ -1554,16 +1541,50 @@ import * as THREE from 'three/webgpu';
                                 dirLightBelow.castShadow = true;
                                 dirLightBelow.shadow.mapType = THREE.HalfFloatType;
                                 dirLightBelow.shadow.camera.near = 0.5;
-                                dirLightBelow.shadow.camera.far = lightReach( dirLightBelow.position.y );
-                                dirLightBelow.shadow.camera.right = shadowExtent;
-                                dirLightBelow.shadow.camera.left = - shadowExtent;
-                                dirLightBelow.shadow.camera.top = shadowExtent;
-                                dirLightBelow.shadow.camera.bottom = - shadowExtent;
-                                dirLightBelow.shadow.camera.updateProjectionMatrix();
                                 dirLightBelow.shadow.mapSize.width = 2048;
                                 dirLightBelow.shadow.mapSize.height = 2048;
                                 studioRoot.add( dirLightBelow );
                                 studioRoot.add( dirLightBelow.target );
+
+                                updateGroundToConeScale = function () {
+
+                                        const s = coneScale;
+                                        const extent = BASE_SHADOW_EXTENT * s;
+                                        ground.scale.set( s, s, 1 );
+                                        grid.scale.set( s, 1, s );
+
+                                        function applyDirectionalShadow( light ) {
+
+                                                light.shadow.camera.far = lightReach( light.position.y, extent );
+                                                light.shadow.camera.right = extent;
+                                                light.shadow.camera.left = - extent;
+                                                light.shadow.camera.top = extent;
+                                                light.shadow.camera.bottom = - extent;
+                                                light.shadow.camera.updateProjectionMatrix();
+
+                                        }
+
+                                        function applyPointShadow( light ) {
+
+                                                const reach = lightReach( light.position.y, extent );
+                                                light.distance = reach;
+                                                light.shadow.camera.far = reach;
+                                                light.shadow.camera.updateProjectionMatrix();
+
+                                        }
+
+                                        spotLight.shadow.camera.far = lightReach( spotLight.position.y, extent );
+                                        spotLight.shadow.camera.updateProjectionMatrix();
+                                        applyDirectionalShadow( dirLight );
+                                        applyDirectionalShadow( dirLightBelow );
+                                        applyPointShadow( lightAbove );
+                                        applyPointShadow( lightAboveFill );
+                                        applyPointShadow( lightBelow );
+                                        applyPointShadow( lightBelowFill );
+
+                                };
+
+                                updateGroundToConeScale();
 
                                 const bpcemRoot = new THREE.Group();
                                 bpcemRoot.name = 'bpcemSetup';
@@ -4007,6 +4028,7 @@ import * as THREE from 'three/webgpu';
                                         coneScale = coneHeight / BASE_CONE_HEIGHT;
                                         coneRadius = fitted.radius;
                                         syncCutPlaneConstants();
+                                        updateGroundToConeScale();
 
                                         if ( conicEditors.coneAngle ) conicEditors.coneAngle.setValue( coneAngle );
                                         if ( conicEditors.scale ) conicEditors.scale.setValue( coneScale );
@@ -6383,6 +6405,7 @@ import * as THREE from 'three/webgpu';
                                                         // Legacy saves stored absolute height.
                                                         coneHeight = params.coneHeight;
                                                         coneScale = coneHeight / BASE_CONE_HEIGHT;
+                                                        updateGroundToConeScale();
                                                         if ( ! ( 'cutUpOffset' in params ) && ! ( 'cutDownOffset' in params ) ) {
 
                                                                 syncCutPlaneConstants();
