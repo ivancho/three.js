@@ -526,7 +526,7 @@
 
                                                 </p>
                                                 <p>Paint (B) — or click the flattened pattern — lets you brush colors onto it; the same UV paint map shows on the cone.
-                                                        The pointer becomes a brush while painting. Click the 3D cone or press Esc to exit paint mode. Pick a color next to the brush; set opacity, size, and softness in the Paint section (lower opacity paint makes the cone wall see-through), hold Shift to erase. 
+                                                        The pointer becomes a brush while painting. Click the 3D cone or press Esc to exit paint mode. Pick a color next to the brush; set size and softness in the Paint section. Check transparent to punch see-through holes in the cone wall; hold Shift to erase. 
                                                         Each stroke is saved (brush settings included) and can be undone with ⌘Z / Ctrl+Z one stroke at a time; strokes persist with autosave / named saves via IndexedDB.
                                                 </p>
                                                 <p>Autosave writes pending edits to local storage immediately (brush strokes go to IndexedDB)
@@ -598,7 +598,7 @@ import * as THREE from 'three/webgpu';
                         paintTexture.needsUpdate = true;
 
                         // Separate opacity map so brush falloff (coverage) is not confused with material alpha.
-                        // Starts fully opaque (1); painting blends toward the brush opacity, including 0.
+                        // Starts fully opaque (1); painting is binary: full color or fully transparent.
                         const paintOpacityCanvas = document.createElement( 'canvas' );
                         paintOpacityCanvas.width = PAINT_MAP_SIZE;
                         paintOpacityCanvas.height = PAINT_MAP_SIZE;
@@ -975,6 +975,48 @@ import * as THREE from 'three/webgpu';
                                         if ( value === 'studio' ) return 'plain';
                                         if ( value === 'bpcem' ) return 'brick room';
                                         return SCENE_SETUPS.includes( value ) ? value : 'plain';
+
+                                }
+
+                                const FLOOR_CENTER = new THREE.Vector3( 4, - 5, 0 );
+                                // Placement uses the default-framed workspace, not the full floor mesh
+                                // (plain 40×40 / brick 160×80 corners sit outside the starting camera view).
+                                const VISIBLE_FLOOR_SIZE = { x: 16, z: 16 };
+                                const FLAT_PATTERN_FLOOR_MARGIN = 0.5;
+                                const FLAT_PATTERN_Y = FLOOR_CENTER.y + 0.1;
+
+                                function getFlattenedMeshPosition() {
+
+                                        return new THREE.Vector3(
+                                                FLOOR_CENTER.x - VISIBLE_FLOOR_SIZE.x * 0.5 + FLAT_PATTERN_FLOOR_MARGIN,
+                                                FLAT_PATTERN_Y,
+                                                FLOOR_CENTER.z - VISIBLE_FLOOR_SIZE.z * 0.5 + FLAT_PATTERN_FLOOR_MARGIN
+                                        );
+
+                                }
+
+                                function updateFlattenedMeshPosition( scene ) {
+
+                                        const flatMesh = scene && scene.userData.flattenedMesh;
+                                        if ( ! flatMesh ) return;
+                                        flatMesh.position.copy( getFlattenedMeshPosition() );
+
+                                }
+
+                                function anchorFlattenedGeometry( geometry ) {
+
+                                        geometry.computeBoundingBox();
+                                        if ( geometry.boundingBox ) {
+
+                                                const anchor = geometry.boundingBox.min;
+                                                geometry.translate( - anchor.x, 0, - anchor.z );
+                                                geometry.userData.developableOffset = { x: anchor.x, z: anchor.z };
+
+                                        } else {
+
+                                                geometry.userData.developableOffset = { x: 0, z: 0 };
+
+                                        }
 
                                 }
 
@@ -1379,7 +1421,7 @@ import * as THREE from 'three/webgpu';
                                 const flattenedMesh = new THREE.Mesh( flattenedGeometry, wallMaterials.clay );
                                 flattenedMesh.castShadow = true;
                                 flattenedMesh.rotation.z = Math.PI;
-                                flattenedMesh.position.set( 8, - 4.9, 0 );
+                                updateFlattenedMeshPosition( scene );
                                 scene.add( flattenedMesh );
                                 scene.userData.flattenedMesh = flattenedMesh;
                                 scene.userData.paintOutline = null;
@@ -2186,6 +2228,12 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function snapPaintOpacity( value ) {
+
+                                        return value > 0 ? 1 : 0;
+
+                                }
+
                                 function hashPaintStrokeRecord( record ) {
 
                                         let h = 2166136261 >>> 0;
@@ -2213,7 +2261,7 @@ import * as THREE from 'three/webgpu';
 
                                         return {
                                                 color: paintColorToCssHex( record.color || '#c43c3c' ),
-                                                opacity: record.opacity != null ? record.opacity : 1,
+                                                opacity: snapPaintOpacity( record.opacity != null ? record.opacity : 1 ),
                                                 brushSize: record.brushSize != null ? record.brushSize : 0.035,
                                                 softness: record.softness != null ? record.softness : 0.7,
                                                 erase: !! record.erase,
@@ -3085,7 +3133,7 @@ import * as THREE from 'three/webgpu';
                                                 cutDownOffset: cutDownOffsetPct,
                                                 cutOffsetsInterval: true,
                                                 paintColor: paintColor,
-                                                paintOpacity: paintOpacity,
+                                                paintOpacity: snapPaintOpacity( paintOpacity ),
                                                 paintBrushSize: paintBrushSize,
                                                 paintBrushSoftness: paintBrushSoftness,
                                                 paintStrokeIds: paintStrokes.map( function ( stroke ) {
@@ -3423,14 +3471,15 @@ import * as THREE from 'three/webgpu';
                                                 if ( paintColorInput ) paintColorInput.value = paintColor;
 
                                         },
-                                        get opacity() {
+                                        get transparent() {
 
-                                                return paintOpacity;
+                                                return paintOpacity <= 0;
 
                                         },
-                                        set opacity( v ) {
+                                        set transparent( v ) {
 
-                                                paintOpacity = v;
+                                                paintOpacity = v ? 0 : 1;
+                                                syncPaintSoftnessEditor();
 
                                         },
                                         get brushSize() {
@@ -3450,11 +3499,12 @@ import * as THREE from 'three/webgpu';
                                         },
                                         get softness() {
 
-                                                return paintBrushSoftness;
+                                                return paintOpacity <= 0 ? 0 : paintBrushSoftness;
 
                                         },
                                         set softness( v ) {
 
+                                                if ( paintOpacity <= 0 ) return;
                                                 paintBrushSoftness = v;
 
                                         },
@@ -3465,10 +3515,11 @@ import * as THREE from 'three/webgpu';
                                         }
                                 };
                                 paintEditors.color = folderPaint.addColor( propsPaint, 'color' );
-                                paintEditors.opacity = folderPaint.add( propsPaint, 'opacity', 0, 1, 0.01 );
+                                paintEditors.transparent = folderPaint.add( propsPaint, 'transparent' );
                                 paintEditors.brushSize = folderPaint.add( propsPaint, 'brushSize', 0.005, 0.12, 0.001 ).name( 'brush size' );
                                 paintEditors.softness = folderPaint.add( propsPaint, 'softness', 0, 1, 0.01 );
                                 folderPaint.add( propsPaint, 'Clear' );
+                                syncPaintSoftnessEditor();
                                 const propsConic = {
 
                                         get applyCuts() {
@@ -4302,13 +4353,46 @@ import * as THREE from 'three/webgpu';
 
                                 }
 
+                                function setInspectorEditorEnabled( editor, enabled ) {
+
+                                        if ( ! editor || ! editor.domElement ) return;
+
+                                        const controls = editor.domElement.querySelectorAll( 'input, select, button, textarea' );
+                                        for ( let i = 0; i < controls.length; i ++ ) {
+
+                                                controls[ i ].disabled = ! enabled;
+
+                                        }
+
+                                        const row = editor.domElement.closest( '.list-item-row' );
+                                        if ( row ) {
+
+                                                row.style.opacity = enabled ? '' : '0.45';
+                                                row.style.pointerEvents = enabled ? '' : 'none';
+
+                                        }
+
+                                }
+
+                                function syncPaintSoftnessEditor() {
+
+                                        const enabled = paintOpacity > 0;
+                                        if ( paintEditors.softness ) {
+
+                                                paintEditors.softness.setValue( enabled ? paintBrushSoftness : 0 );
+                                                setInspectorEditorEnabled( paintEditors.softness, enabled );
+
+                                        }
+
+                                }
+
                                 function syncPaintEditors() {
 
                                         if ( paintColorInput ) paintColorInput.value = paintColor;
                                         if ( paintEditors.color ) paintEditors.color.setValue( paintColor );
-                                        if ( paintEditors.opacity ) paintEditors.opacity.setValue( paintOpacity );
+                                        if ( paintEditors.transparent ) paintEditors.transparent.setValue( paintOpacity <= 0 );
                                         if ( paintEditors.brushSize ) paintEditors.brushSize.setValue( paintBrushSize );
-                                        if ( paintEditors.softness ) paintEditors.softness.setValue( paintBrushSoftness );
+                                        syncPaintSoftnessEditor();
 
                                 }
 
@@ -4497,7 +4581,7 @@ import * as THREE from 'three/webgpu';
                                         const innerRadius = ( 1 - softness ) * 0.999;
                                         const brush = new THREE.Color( stroke.color != null ? stroke.color : paintColor );
                                         const rgb = `${ Math.round( brush.r * 255 ) },${ Math.round( brush.g * 255 ) },${ Math.round( brush.b * 255 ) }`;
-                                        const opacityByte = Math.round( Math.min( 1, Math.max( 0, stroke.opacity != null ? stroke.opacity : paintOpacity ) ) * 255 );
+                                        const opacityByte = snapPaintOpacity( stroke.opacity != null ? stroke.opacity : paintOpacity ) * 255;
                                         const erase = !! stroke.erase;
 
                                         const offsets = [ 0 ];
@@ -4515,10 +4599,18 @@ import * as THREE from 'three/webgpu';
                                                         ctx.save();
                                                         ctx.translate( cx, y );
                                                         ctx.scale( rx, ry );
-                                                        const gradient = ctx.createRadialGradient( 0, 0, innerRadius, 0, 0, 1 );
-                                                        gradient.addColorStop( 0, centerColor );
-                                                        gradient.addColorStop( 1, edgeColor );
-                                                        ctx.fillStyle = gradient;
+                                                        if ( softness <= 0 ) {
+
+                                                                ctx.fillStyle = centerColor;
+
+                                                        } else {
+
+                                                                const gradient = ctx.createRadialGradient( 0, 0, innerRadius, 0, 0, 1 );
+                                                                gradient.addColorStop( 0, centerColor );
+                                                                gradient.addColorStop( 1, edgeColor );
+                                                                ctx.fillStyle = gradient;
+
+                                                        }
                                                         ctx.beginPath();
                                                         ctx.arc( 0, 0, 1, 0, Math.PI * 2 );
                                                         ctx.fill();
@@ -4534,6 +4626,14 @@ import * as THREE from 'three/webgpu';
 
                                                 stampOnContext( paintCtx, 'rgba(0,0,0,0.9)', 'rgba(0,0,0,0)', 'destination-out' );
                                                 stampOnContext( paintOpacityCtx, 'rgba(255,255,255,0.9)', 'rgba(255,255,255,0)', 'source-over' );
+
+                                        } else if ( opacityByte === 0 ) {
+
+                                                // Hole punch: do not write brush color (that left a tinted rim
+                                                // where canvas AA / texture filtering kept partial opacity).
+                                                const holeEdge = softness <= 0 ? 'rgba(0,0,0,1)' : 'rgba(0,0,0,0)';
+                                                stampOnContext( paintCtx, 'rgba(0,0,0,1)', holeEdge, 'destination-out' );
+                                                stampOnContext( paintOpacityCtx, 'rgba(0,0,0,1)', holeEdge, 'source-over' );
 
                                         } else {
 
@@ -4630,7 +4730,7 @@ import * as THREE from 'three/webgpu';
 
                                         const record = {
                                                 color: paintColorToCssHex( stroke.color ),
-                                                opacity: stroke.opacity,
+                                                opacity: snapPaintOpacity( stroke.opacity ),
                                                 brushSize: stroke.brushSize,
                                                 softness: stroke.softness,
                                                 erase: !! stroke.erase,
@@ -5017,7 +5117,7 @@ import * as THREE from 'three/webgpu';
                                                                                 color: paintColor,
                                                                                 opacity: paintOpacity,
                                                                                 brushSize: paintBrushSize,
-                                                                                softness: paintBrushSoftness,
+                                                                                softness: paintOpacity <= 0 ? 0 : paintBrushSoftness,
                                                                                 erase: !! event.shiftKey,
                                                                                 points: []
                                                                         };
@@ -5566,6 +5666,7 @@ import * as THREE from 'three/webgpu';
 
                                         } );
 
+                                        scenes.forEach( updateFlattenedMeshPosition );
                                         updateSceneSetupEditorsVisibility();
                                         if ( ! skipAutosave ) scheduleAutosave();
                                         requestRender();
@@ -6039,6 +6140,7 @@ import * as THREE from 'three/webgpu';
 
                                         } );
 
+                                        scenes.forEach( updateFlattenedMeshPosition );
                                         rebuildPaintOutline();
                                         scenes.forEach( updateStats );
                                         updateGeometryModeBadge();
@@ -6380,7 +6482,7 @@ import * as THREE from 'three/webgpu';
                                                 syncConicEditors();
 
                                                 if ( 'paintColor' in params && params.paintColor ) paintColor = paintColorToCssHex( params.paintColor );
-                                                if ( 'paintOpacity' in params && params.paintOpacity != null ) paintOpacity = params.paintOpacity;
+                                                if ( 'paintOpacity' in params && params.paintOpacity != null ) paintOpacity = snapPaintOpacity( params.paintOpacity );
                                                 if ( 'paintBrushSize' in params && params.paintBrushSize != null ) paintBrushSize = params.paintBrushSize;
                                                 if ( 'paintBrushSoftness' in params && params.paintBrushSoftness != null ) paintBrushSoftness = params.paintBrushSoftness;
 
@@ -7239,7 +7341,7 @@ import * as THREE from 'three/webgpu';
                                                 if ( ! stroke || ! stroke.points || stroke.points.length < 2 ) continue;
                                                 out.push( {
                                                         color: paintColorToCssHex( stroke.color != null ? stroke.color : paintColor ),
-                                                        opacity: stroke.opacity != null ? stroke.opacity : paintOpacity,
+                                                        opacity: snapPaintOpacity( stroke.opacity != null ? stroke.opacity : paintOpacity ),
                                                         brushSize: stroke.brushSize != null ? stroke.brushSize : paintBrushSize,
                                                         softness: stroke.softness != null ? stroke.softness : paintBrushSoftness,
                                                         erase: !! stroke.erase,
@@ -7286,7 +7388,7 @@ import * as THREE from 'three/webgpu';
 
                                                 const points = stroke.points;
                                                 const brushSize = stroke.brushSize != null ? stroke.brushSize : paintBrushSize;
-                                                const opacity = stroke.opacity != null ? stroke.opacity : paintOpacity;
+                                                const opacity = snapPaintOpacity( stroke.opacity != null ? stroke.opacity : paintOpacity );
                                                 const color = paintColorToCssHex( stroke.color != null ? stroke.color : paintColor );
                                                 const width = Math.max( 0.01, getPaintBrushWorldRadius( brushSize ) * 2 * svgScale );
 
@@ -7469,7 +7571,7 @@ import * as THREE from 'three/webgpu';
                                                 strokes.push( {
                                                         color: paintColorToCssHex( pathEl.getAttribute( 'stroke' ) || paintColor ),
                                                         opacity: strokeOpacity != null && strokeOpacity !== ''
-                                                                ? Math.max( 0, Math.min( 1, parseFloat( strokeOpacity ) ) )
+                                                                ? snapPaintOpacity( parseFloat( strokeOpacity ) )
                                                                 : 1,
                                                         brushSize: dataBrush != null && dataBrush !== ''
                                                                 ? Math.max( 0.005, Math.min( 0.12, parseFloat( dataBrush ) ) )
@@ -8336,19 +8438,7 @@ import * as THREE from 'three/webgpu';
 
                                         }
 
-                                        geometry.computeBoundingBox();
-                                        if ( geometry.boundingBox ) {
-
-                                                const center = new THREE.Vector3();
-                                                geometry.boundingBox.getCenter( center );
-                                                geometry.translate( - center.x, 0, - center.z );
-                                                geometry.userData.developableOffset = { x: center.x, z: center.z };
-
-                                        } else {
-
-                                                geometry.userData.developableOffset = { x: 0, z: 0 };
-
-                                        }
+                                        anchorFlattenedGeometry( geometry );
 
                                         return geometry;
 
@@ -8943,16 +9033,7 @@ import * as THREE from 'three/webgpu';
                                         geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( uvs, 2 ) );
                                         geometry.setIndex( indices );
 
-                                        geometry.computeBoundingBox();
-                                        if ( geometry.boundingBox ) {
-                                                const center = new THREE.Vector3();
-                                                geometry.boundingBox.getCenter( center );
-                                                geometry.translate( - center.x, 0, - center.z );
-                                                // Apex-centric origin before centering; inverse lift must undo this shift.
-                                                geometry.userData.developableOffset = { x: center.x, z: center.z };
-                                        } else {
-                                                geometry.userData.developableOffset = { x: 0, z: 0 };
-                                        }
+                                        anchorFlattenedGeometry( geometry );
 
                                         return geometry;
                                 }

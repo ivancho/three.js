@@ -9,8 +9,24 @@
 		<meta property="og:url" content="https://threejs.org/examples/webgpu_xr_rollercoaster.html">
 		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgpu_xr_rollercoaster.jpg">
 		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			#hint {
+				position: absolute;
+				top: 10px;
+				left: 10px;
+				color: #333;
+				font-family: monospace;
+				font-size: 13px;
+				background: rgba(255, 255, 255, 0.75);
+				padding: 6px 10px;
+				pointer-events: none;
+				z-index: 1;
+			}
+		</style>
 	</head>
 	<body>
+		<div id="hint"></div>
+
 		<script type="importmap">
 			{
 				"imports": {
@@ -32,11 +48,45 @@
 				TreesGeometry,
 				SkyGeometry
 			} from 'three/addons/misc/RollerCoaster.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { VRButton } from 'three/addons/webxr/VRButton.js';
 			import { setupWebGLXRFallback } from 'three/addons/webxr/WebGLXRFallback.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+			const CELL_SIZE = 12;
+			const GRID_HALF = 10;
+			const DEFAULT_HEIGHT = 8;
+			const MIN_HEIGHT = 2;
+			const MAX_HEIGHT = 40;
+
+			// 8 compass steps on the XZ grid: +i is +X, +j is +Z
+			const DIRS = [
+				[ 1, 0 ],
+				[ 1, 1 ],
+				[ 0, 1 ],
+				[ - 1, 1 ],
+				[ - 1, 0 ],
+				[ - 1, - 1 ],
+				[ 0, - 1 ],
+				[ 1, - 1 ]
+			];
+
+			const TURNS = {
+				straight: 0,
+				diagRight: 1,
+				right: 2,
+				left: - 2,
+				diagLeft: - 1
+			};
+
+			const TURN_KEYS = [ 'straight', 'left', 'right', 'diagLeft', 'diagRight' ];
 
 			let mesh, material, geometry;
 			let renderer;
+			let vrButton;
+			let mode = 'edit';
+			let curve = null;
+			let isClosed = false;
 
 			const rendererParameters = { antialias: true, outputBufferType: THREE.UnsignedByteType, multiview: false };
 
@@ -44,7 +94,10 @@
 			setRenderer( renderer );
 			setupWebGLXRFallback( renderer, () => createRenderer( true ), setRenderer );
 
-			document.body.appendChild( VRButton.createButton( renderer, { optionalFeatures: [ 'webgpu' ] } ) );
+			vrButton = VRButton.createButton( renderer, { optionalFeatures: [ 'webgpu' ] } );
+			const vrButtonContainer = document.createElement( 'div' );
+			vrButtonContainer.appendChild( vrButton );
+			document.body.appendChild( vrButtonContainer );
 
 			//
 
@@ -76,6 +129,8 @@
 					document.body.replaceChild( newRenderer.domElement, oldRenderer.domElement );
 					oldRenderer.dispose();
 
+					if ( controls ) controls.domElement = newRenderer.domElement;
+
 				}
 
 				renderer = newRenderer;
@@ -92,8 +147,18 @@
 			const train = new THREE.Object3D();
 			scene.add( train );
 
-			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 500 );
-			train.add( camera );
+			const playCamera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 500 );
+			train.add( playCamera );
+
+			const editCamera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 1000 );
+			editCamera.position.set( 0, 120, 140 );
+
+			let controls = new OrbitControls( editCamera, renderer.domElement );
+			controls.target.set( 0, 5, 0 );
+			controls.enableDamping = true;
+			controls.update();
+
+			const hintEl = document.getElementById( 'hint' );
 
 			// environment
 
@@ -138,68 +203,7 @@
 			mesh = new THREE.Mesh( geometry, material );
 			scene.add( mesh );
 
-			//
-
-			const PI2 = Math.PI * 2;
-
-			const curve = ( function () {
-
-				const vector = new THREE.Vector3();
-				const vector2 = new THREE.Vector3();
-
-				return {
-
-					getPointAt: function ( t ) {
-
-						t = t * PI2;
-
-						const x = Math.sin( t * 3 ) * Math.cos( t * 4 ) * 50;
-						const y = Math.sin( t * 10 ) * 2 + Math.cos( t * 17 ) * 2 + 5;
-						const z = Math.sin( t ) * Math.sin( t * 4 ) * 50;
-
-						return vector.set( x, y, z ).multiplyScalar( 2 );
-
-					},
-
-					getTangentAt: function ( t ) {
-
-						const delta = 0.0001;
-						const t1 = Math.max( 0, t - delta );
-						const t2 = Math.min( 1, t + delta );
-
-						return vector2.copy( this.getPointAt( t2 ) )
-							.sub( this.getPointAt( t1 ) ).normalize();
-
-					}
-
-				};
-
-			} )();
-
-			geometry = new RollerCoasterGeometry( curve, 1500 );
-			material = new THREE.MeshPhongMaterial( {
-				vertexColors: true
-			} );
-			mesh = new THREE.Mesh( geometry, material );
-			scene.add( mesh );
-
-			geometry = new RollerCoasterLiftersGeometry( curve, 100 );
-			material = new THREE.MeshPhongMaterial();
-			mesh = new THREE.Mesh( geometry, material );
-			mesh.position.y = 0.1;
-			scene.add( mesh );
-
-			geometry = new RollerCoasterShadowGeometry( curve, 500 );
-			material = new THREE.MeshBasicMaterial( {
-				color: 0x305000, depthWrite: false, transparent: true
-			} );
-			mesh = new THREE.Mesh( geometry, material );
-			mesh.position.y = 0.1;
-			scene.add( mesh );
-
 			const funfairs = [];
-
-			//
 
 			geometry = new THREE.CylinderGeometry( 10, 10, 5, 15 );
 			material = new THREE.MeshLambertMaterial( {
@@ -222,14 +226,556 @@
 
 			funfairs.push( mesh );
 
-			//
+			// --- track editor ---
+
+			const gridHelper = new THREE.GridHelper( CELL_SIZE * GRID_HALF * 2, GRID_HALF * 2, 0x888888, 0xcccccc );
+			gridHelper.position.y = 0.05;
+			scene.add( gridHelper );
+
+			const editGroup = new THREE.Group();
+			scene.add( editGroup );
+
+			const previewGroup = new THREE.Group();
+			editGroup.add( previewGroup );
+
+			const highlightGroup = new THREE.Group();
+			editGroup.add( highlightGroup );
+
+			const pickPlane = new THREE.Mesh(
+				new THREE.PlaneGeometry( CELL_SIZE * GRID_HALF * 2, CELL_SIZE * GRID_HALF * 2 ),
+				new THREE.MeshBasicMaterial( { visible: false } )
+			);
+			pickPlane.rotation.x = - Math.PI / 2;
+			pickPlane.position.y = 0.1;
+			editGroup.add( pickPlane );
+
+			const coasterMaterial = new THREE.MeshPhongMaterial( { vertexColors: true } );
+			const lifterMaterial = new THREE.MeshPhongMaterial();
+			const shadowMaterial = new THREE.MeshBasicMaterial( {
+				color: 0x305000, depthWrite: false, transparent: true
+			} );
+
+			let coasterMesh = null;
+			let lifterMesh = null;
+			let shadowMesh = null;
+
+			const startCell = { i: - 3, j: - 2 };
+			const startHeading = 0;
+			let startHeight = DEFAULT_HEIGHT;
+
+			const track = {
+				segments: [],
+				cell: { i: startCell.i, j: startCell.j },
+				heading: startHeading,
+				occupied: new Set()
+			};
+
+			const params = {
+				mode: 'Edit',
+				turn: 'straight',
+				height: DEFAULT_HEIGHT,
+				addSegment: () => addSegment( params.turn, params.height ),
+				undo: undoSegment,
+				closeLoop: closeLoop,
+				resetTrack: resetTrack
+			};
+
+			const raycaster = new THREE.Raycaster();
+			const pointer = new THREE.Vector2();
+
+			function cellKey( i, j ) {
+
+				return i + ',' + j;
+
+			}
+
+			function cellToWorld( i, j, height ) {
+
+				return new THREE.Vector3( i * CELL_SIZE, height, j * CELL_SIZE );
+
+			}
+
+			function wrapHeading( h ) {
+
+				return ( ( h % 8 ) + 8 ) % 8;
+
+			}
+
+			function inBounds( i, j ) {
+
+				return Math.abs( i ) <= GRID_HALF && Math.abs( j ) <= GRID_HALF;
+
+			}
+
+			function resolveTurn( fromCell, heading, turn ) {
+
+				const delta = TURNS[ turn ];
+				const nextHeading = wrapHeading( heading + delta );
+				const [ di, dj ] = DIRS[ nextHeading ];
+				const nextCell = { i: fromCell.i + di, j: fromCell.j + dj };
+
+				return { nextCell, nextHeading };
+
+			}
+
+			function rebuildTrackState() {
+
+				track.cell = { i: startCell.i, j: startCell.j };
+				track.heading = startHeading;
+				track.occupied = new Set( [ cellKey( startCell.i, startCell.j ) ] );
+
+				for ( let s = 0; s < track.segments.length; s ++ ) {
+
+					const resolved = resolveTurn( track.cell, track.heading, track.segments[ s ].turn );
+					track.cell = resolved.nextCell;
+					track.heading = resolved.nextHeading;
+					track.occupied.add( cellKey( track.cell.i, track.cell.j ) );
+
+				}
+
+				isClosed = checkClosed();
+
+				if ( isClosed && track.segments.length > 0 ) {
+
+					startHeight = track.segments[ track.segments.length - 1 ].height;
+
+				}
+
+			}
+
+			function checkClosed() {
+
+				if ( track.segments.length < 4 ) return false;
+
+				return track.cell.i === startCell.i &&
+					track.cell.j === startCell.j &&
+					track.heading === startHeading;
+
+			}
+
+			function isTurnLegal( turn, allowReturnToStart = false ) {
+
+				const { nextCell, nextHeading } = resolveTurn( track.cell, track.heading, turn );
+
+				if ( ! inBounds( nextCell.i, nextCell.j ) ) return false;
+
+				const key = cellKey( nextCell.i, nextCell.j );
+				const isStart = nextCell.i === startCell.i && nextCell.j === startCell.j;
+
+				if ( isStart ) {
+
+					if ( ! allowReturnToStart && track.segments.length < 3 ) return false;
+					// closing: must match start heading after this move
+					return nextHeading === startHeading;
+
+				}
+
+				if ( track.occupied.has( key ) ) return false;
+
+				return true;
+
+			}
+
+			function getPointsFromSegments( segments, closed ) {
+
+				const points = [ cellToWorld( startCell.i, startCell.j, startHeight ) ];
+				let cell = { i: startCell.i, j: startCell.j };
+				let heading = startHeading;
+
+				for ( let s = 0; s < segments.length; s ++ ) {
+
+					const resolved = resolveTurn( cell, heading, segments[ s ].turn );
+					cell = resolved.nextCell;
+					heading = resolved.nextHeading;
+
+					if ( closed && s === segments.length - 1 &&
+						cell.i === startCell.i && cell.j === startCell.j ) {
+
+						// closed CatmullRom duplicates the start via the closed flag
+						continue;
+
+					}
+
+					points.push( cellToWorld( cell.i, cell.j, segments[ s ].height ) );
+
+				}
+
+				return points;
+
+			}
+
+			function makeCurveWrapper( catmull ) {
+
+				const vector = new THREE.Vector3();
+				const vector2 = new THREE.Vector3();
+
+				return {
+
+					getPointAt: function ( t ) {
+
+						return catmull.getPointAt( t, vector );
+
+					},
+
+					getTangentAt: function ( t ) {
+
+						const delta = 0.0001;
+						const t1 = Math.max( 0, t - delta );
+						const t2 = Math.min( 1, t + delta );
+
+						return vector2.copy( this.getPointAt( t2 ) )
+							.sub( this.getPointAt( t1 ) ).normalize();
+
+					}
+
+				};
+
+			}
+
+			function disposeMesh( object ) {
+
+				if ( ! object ) return;
+
+				scene.remove( object );
+				object.geometry.dispose();
+
+			}
+
+			function rebuildCoasterMeshes() {
+
+				const points = getPointsFromSegments( track.segments, isClosed );
+
+				disposeMesh( coasterMesh );
+				disposeMesh( lifterMesh );
+				disposeMesh( shadowMesh );
+				coasterMesh = lifterMesh = shadowMesh = null;
+				curve = null;
+
+				if ( points.length < 2 ) {
+
+					updatePreview();
+					updateHighlights();
+					updateHint();
+					return;
+
+				}
+
+				const catmull = new THREE.CatmullRomCurve3( points, isClosed, 'catmullrom', 0.5 );
+				curve = makeCurveWrapper( catmull );
+
+				const divisions = Math.max( 200, points.length * 80 );
+
+				coasterMesh = new THREE.Mesh( new RollerCoasterGeometry( curve, divisions ), coasterMaterial );
+				scene.add( coasterMesh );
+
+				lifterMesh = new THREE.Mesh( new RollerCoasterLiftersGeometry( curve, Math.max( 20, points.length * 4 ) ), lifterMaterial );
+				lifterMesh.position.y = 0.1;
+				scene.add( lifterMesh );
+
+				shadowMesh = new THREE.Mesh( new RollerCoasterShadowGeometry( curve, Math.max( 100, points.length * 20 ) ), shadowMaterial );
+				shadowMesh.position.y = 0.1;
+				scene.add( shadowMesh );
+
+				updatePreview();
+				updateHighlights();
+				updateHint();
+
+			}
+
+			function clearGroup( group ) {
+
+				while ( group.children.length > 0 ) {
+
+					const child = group.children[ 0 ];
+					group.remove( child );
+					if ( child.geometry ) child.geometry.dispose();
+					if ( child.material ) child.material.dispose();
+
+				}
+
+			}
+
+			function updatePreview() {
+
+				clearGroup( previewGroup );
+
+				const points = getPointsFromSegments( track.segments, false );
+
+				for ( let i = 0; i < points.length; i ++ ) {
+
+					const marker = new THREE.Mesh(
+						new THREE.SphereGeometry( 0.8, 12, 12 ),
+						new THREE.MeshBasicMaterial( {
+							color: i === 0 ? 0x00aa00 : ( i === points.length - 1 ? 0xff4400 : 0xffcc00 )
+						} )
+					);
+					marker.position.copy( points[ i ] );
+					previewGroup.add( marker );
+
+				}
+
+				if ( points.length >= 2 ) {
+
+					const lineGeom = new THREE.BufferGeometry().setFromPoints( points );
+					const line = new THREE.Line( lineGeom, new THREE.LineBasicMaterial( { color: 0xff8800 } ) );
+					previewGroup.add( line );
+
+				}
+
+			}
+
+			function updateHighlights() {
+
+				clearGroup( highlightGroup );
+
+				if ( mode !== 'edit' || isClosed ) return;
+
+				for ( let t = 0; t < TURN_KEYS.length; t ++ ) {
+
+					const turn = TURN_KEYS[ t ];
+					if ( ! isTurnLegal( turn, true ) ) continue;
+
+					const { nextCell } = resolveTurn( track.cell, track.heading, turn );
+					const highlight = new THREE.Mesh(
+						new THREE.BoxGeometry( CELL_SIZE * 0.7, 0.4, CELL_SIZE * 0.7 ),
+						new THREE.MeshBasicMaterial( {
+							color: 0x44aaff,
+							transparent: true,
+							opacity: 0.45
+						} )
+					);
+					highlight.position.set( nextCell.i * CELL_SIZE, 0.3, nextCell.j * CELL_SIZE );
+					highlight.userData.turn = turn;
+					highlightGroup.add( highlight );
+
+				}
+
+			}
+
+			function addSegment( turn, height, allowReturnToStart = false ) {
+
+				if ( isClosed ) return false;
+				if ( ! isTurnLegal( turn, allowReturnToStart || track.segments.length >= 3 ) ) return false;
+
+				track.segments.push( { turn, height } );
+				rebuildTrackState();
+				rebuildCoasterMeshes();
+				return true;
+
+			}
+
+			function undoSegment() {
+
+				if ( track.segments.length === 0 ) return;
+
+				track.segments.pop();
+				rebuildTrackState();
+				rebuildCoasterMeshes();
+
+			}
+
+			function closeLoop() {
+
+				if ( isClosed ) return;
+
+				for ( let t = 0; t < TURN_KEYS.length; t ++ ) {
+
+					const turn = TURN_KEYS[ t ];
+					const { nextCell, nextHeading } = resolveTurn( track.cell, track.heading, turn );
+
+					if ( nextCell.i === startCell.i && nextCell.j === startCell.j && nextHeading === startHeading ) {
+
+						addSegment( turn, startHeight, true );
+						return;
+
+					}
+
+				}
+
+			}
+
+			function buildDefaultLoop() {
+
+				track.segments = [
+					{ turn: 'straight', height: 10 },
+					{ turn: 'straight', height: 14 },
+					{ turn: 'straight', height: 16 },
+					{ turn: 'right', height: 16 },
+					{ turn: 'straight', height: 14 },
+					{ turn: 'straight', height: 12 },
+					{ turn: 'straight', height: 10 },
+					{ turn: 'right', height: 10 },
+					{ turn: 'straight', height: 8 },
+					{ turn: 'straight', height: 8 },
+					{ turn: 'straight', height: 8 },
+					{ turn: 'right', height: 8 },
+					{ turn: 'straight', height: 8 },
+					{ turn: 'straight', height: 8 },
+					{ turn: 'straight', height: 8 },
+					{ turn: 'right', height: startHeight }
+				];
+				rebuildTrackState();
+
+			}
+
+			function resetTrack() {
+
+				startHeight = DEFAULT_HEIGHT;
+				params.height = DEFAULT_HEIGHT;
+				buildDefaultLoop();
+				rebuildCoasterMeshes();
+				progress = 0;
+				velocity = 0.0001;
+
+			}
+
+			function setMode( nextMode ) {
+
+				const name = String( nextMode ).toLowerCase();
+
+				if ( name === 'play' ) {
+
+					if ( ! isClosed || ! curve ) {
+
+						params.mode = 'Edit';
+						if ( modeController ) modeController.updateDisplay();
+						updateHint();
+						return;
+
+					}
+
+					mode = 'play';
+					params.mode = 'Play';
+					controls.enabled = false;
+					editGroup.visible = false;
+					gridHelper.visible = false;
+					vrButtonContainer.style.display = '';
+					renderer.xr.enabled = true;
+					progress = 0;
+					velocity = 0.0001;
+
+				} else {
+
+					mode = 'edit';
+					params.mode = 'Edit';
+					controls.enabled = true;
+					editGroup.visible = true;
+					gridHelper.visible = true;
+					vrButtonContainer.style.display = 'none';
+
+					if ( renderer.xr.isPresenting ) {
+
+						renderer.xr.getSession().end();
+
+					}
+
+					renderer.xr.enabled = false;
+					updateHighlights();
+
+				}
+
+				if ( modeController ) modeController.updateDisplay();
+				updateHint();
+
+			}
+
+			function updateHint() {
+
+				if ( mode === 'edit' ) {
+
+					hintEl.textContent = isClosed
+						? 'Edit mode — loop closed. Switch to Play to ride.'
+						: 'Edit mode — click a blue cell or Add Segment. Close the loop to enable Play.';
+
+				} else {
+
+					hintEl.textContent = 'Play mode — riding the track. Switch to Edit to change it.';
+
+				}
+
+			}
+
+			let gui, turnController, modeController;
+
+			function initGui() {
+
+				gui = new GUI( { title: 'Roller Coaster' } );
+
+				modeController = gui.add( params, 'mode', [ 'Edit', 'Play' ] ).name( 'Mode' ).onChange( ( v ) => {
+
+					setMode( v );
+
+				} );
+
+				turnController = gui.add( params, 'turn', {
+					Straight: 'straight',
+					Left: 'left',
+					Right: 'right',
+					'Diag Left': 'diagLeft',
+					'Diag Right': 'diagRight'
+				} ).name( 'Next turn' );
+
+				gui.add( params, 'height', MIN_HEIGHT, MAX_HEIGHT, 0.5 ).name( 'Height' ).onChange( ( v ) => {
+
+					if ( track.segments.length === 0 || mode !== 'edit' ) return;
+
+					const last = track.segments[ track.segments.length - 1 ];
+
+					if ( last.height === v && ( ! isClosed || startHeight === v ) ) return;
+
+					last.height = v;
+
+					if ( isClosed ) startHeight = v;
+
+					rebuildCoasterMeshes();
+
+				} );
+
+				gui.add( params, 'addSegment' ).name( 'Add segment' );
+				gui.add( params, 'undo' ).name( 'Undo' );
+				gui.add( params, 'closeLoop' ).name( 'Close loop' );
+				gui.add( params, 'resetTrack' ).name( 'Reset track' );
+
+			}
+
+			function onPointerDown( event ) {
+
+				if ( mode !== 'edit' || isClosed ) return;
+				if ( event.button !== 0 ) return;
+
+				pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+				pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+				raycaster.setFromCamera( pointer, editCamera );
+
+				const hits = raycaster.intersectObjects( highlightGroup.children, false );
+
+				if ( hits.length > 0 ) {
+
+					event.stopPropagation();
+					event.preventDefault();
+
+					const turn = hits[ 0 ].object.userData.turn;
+					params.turn = turn;
+					if ( turnController ) turnController.updateDisplay();
+					addSegment( turn, params.height, true );
+
+				}
+
+			}
 
 			window.addEventListener( 'resize', onWindowResize );
+			renderer.domElement.addEventListener( 'pointerdown', onPointerDown, true );
 
 			function onWindowResize() {
 
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
+				const aspect = window.innerWidth / window.innerHeight;
+
+				playCamera.aspect = aspect;
+				playCamera.updateProjectionMatrix();
+
+				editCamera.aspect = aspect;
+				editCamera.updateProjectionMatrix();
 
 				renderer.setSize( window.innerWidth, window.innerHeight );
 
@@ -246,7 +792,7 @@
 			const tangent2 = new THREE.Vector3();
 			const bankQuaternion = new THREE.Quaternion();
 
-			let velocity = 0;
+			let velocity = 0.0001;
 			let progress = 0;
 
 			let prevTime = performance.now();
@@ -262,47 +808,57 @@
 
 				}
 
-				//
+				if ( mode === 'edit' ) {
 
-				progress += velocity;
-				progress = progress % 1;
+					controls.update();
+					renderer.render( scene, editCamera );
 
-				position.copy( curve.getPointAt( progress ) );
-				position.y += 0.3;
+				} else if ( curve ) {
 
-				train.position.copy( position );
+					progress += velocity;
+					progress = progress % 1;
 
-				tangent.copy( curve.getTangentAt( progress ) );
+					position.copy( curve.getPointAt( progress ) );
+					position.y += 0.3;
 
-				velocity -= tangent.y * 0.0000001 * delta;
-				velocity = Math.max( 0.00004, Math.min( 0.0002, velocity ) );
+					train.position.copy( position );
 
-				// banking
+					tangent.copy( curve.getTangentAt( progress ) );
 
-				const bankDelta = 0.01;
-				const t1 = ( ( progress - bankDelta ) % 1 + 1 ) % 1;
-				const t2 = ( progress + bankDelta ) % 1;
+					velocity -= tangent.y * 0.0000001 * delta;
+					velocity = Math.max( 0.00004, Math.min( 0.0002, velocity ) );
 
-				tangent1.copy( curve.getTangentAt( t1 ) );
-				tangent2.copy( curve.getTangentAt( t2 ) );
+					const bankDelta = 0.01;
+					const t1 = ( ( progress - bankDelta ) % 1 + 1 ) % 1;
+					const t2 = ( progress + bankDelta ) % 1;
 
-				let headingChange = Math.atan2( tangent2.x, tangent2.z ) - Math.atan2( tangent1.x, tangent1.z );
-				if ( headingChange > Math.PI ) headingChange -= Math.PI * 2;
-				if ( headingChange < - Math.PI ) headingChange += Math.PI * 2;
+					tangent1.copy( curve.getTangentAt( t1 ) );
+					tangent2.copy( curve.getTangentAt( t2 ) );
 
-				train.up.set( 0, 1, 0 );
-				bankQuaternion.setFromAxisAngle( tangent, - Math.atan( headingChange * 8 ) * 0.5 );
-				train.up.applyQuaternion( bankQuaternion );
+					let headingChange = Math.atan2( tangent2.x, tangent2.z ) - Math.atan2( tangent1.x, tangent1.z );
+					if ( headingChange > Math.PI ) headingChange -= Math.PI * 2;
+					if ( headingChange < - Math.PI ) headingChange += Math.PI * 2;
 
-				train.lookAt( lookAt.copy( position ).sub( tangent ) );
+					train.up.set( 0, 1, 0 );
+					bankQuaternion.setFromAxisAngle( tangent, - Math.atan( headingChange * 8 ) * 0.5 );
+					train.up.applyQuaternion( bankQuaternion );
 
-				//
+					train.lookAt( lookAt.copy( position ).sub( tangent ) );
 
-				renderer.render( scene, camera );
+					renderer.render( scene, playCamera );
+
+				}
 
 				prevTime = time;
 
 			}
+
+			// boot
+
+			initGui();
+			buildDefaultLoop();
+			rebuildCoasterMeshes();
+			setMode( 'edit' );
 
 		</script>
 
