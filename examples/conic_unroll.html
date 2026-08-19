@@ -801,9 +801,12 @@ import * as THREE from 'three/webgpu';
                                         // transmission→0: fade caustic to black umbra (opaque cast).
                                         // Paint opacity→0: drop shadow alpha so clear paint casts no umbra
                                         // (Renderer applies transmitted shadow as mix(1, color, a)).
+                                        // Paint color tints the caustic like stained glass (same mix as the mesh).
+                                        const paintSample = texture( paintTexture, uv() );
                                         const paintOpacitySample = texture( paintOpacityTexture, uv() ).r;
+                                        const tint = mix( baseColorUniform, paintSample.rgb, paintSample.a );
                                         const causticRgb = causticProjection.mul( viewZ.mul( 25 ) ).add( viewZ )
-                                                .mul( baseColorUniform ).mul( causticStrengthUniform ).mul( causticTransmissionUniform );
+                                                .mul( tint ).mul( causticStrengthUniform ).mul( causticTransmissionUniform );
                                         return vec4( causticRgb, paintOpacitySample );
 
                                 } )();
